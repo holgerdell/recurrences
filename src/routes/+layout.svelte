@@ -10,7 +10,7 @@
 </svelte:head>
 
 <div class="w-dvw h-dvh">
-<div class="p-10 h-full mx-auto w-full max-w-xl bg-slate-100">
+<div class="p-10 h-full mx-auto w-full max-w-2xl bg-slate-100">
 	{@render children()}
 </div>
 </div>
