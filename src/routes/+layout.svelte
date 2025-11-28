@@ -1,7 +1,7 @@
 <script lang="ts">
-	import './layout.css';
-	import favicon from '$lib/assets/favicon.svg';
-	let { children } = $props();
+	import "./layout.css"
+	import favicon from "$lib/assets/favicon.svg"
+	let { children } = $props()
 </script>
 
 <svelte:head>
@@ -9,7 +9,7 @@
 </svelte:head>
 
 <div class="w-dvw h-dvh">
-<div class="p-10 h-full mx-auto w-full max-w-2xl bg-slate-100">
-	{@render children()}
-</div>
+	<div class="p-10 h-full mx-auto w-full max-w-2xl bg-slate-100">
+		{@render children()}
+	</div>
 </div>
