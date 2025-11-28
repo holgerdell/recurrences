@@ -30,8 +30,12 @@
 		if (x) S.log.push([p.recurrence, x])
 	}
 
-	function formatNumber(x: number) {
-		return x.toFixed(4).replace(/\.?0+$/, "")
+	function formatNumber(x: number): string {
+		if (!Number.isFinite(x)) return String(x)
+		// Round up at 4 decimals
+		const roundedUp = Math.ceil(x * 1e4) / 1e4
+		// Convert to string, remove trailing zeros and dot
+		return roundedUp.toFixed(4).replace(/\.?0+$/, "")
 	}
 
 	export function parseRecurrence(expr: string): ParseResult {
@@ -269,7 +273,6 @@
 
 	let parsed = $derived(parseRecurrence(S.text))
 	let x = $derived(parsed.ok ? dominantRoot(parsed.recurrence) : undefined)
-	let log = $state([])
 </script>
 
 <h1 class="font-bold text-2xl mb-12">Recurrence relation solver</h1>
