@@ -91,8 +91,8 @@ describe("dominantRoot", () => {
 		if (result.ok) {
 			const root = dominantRoot(result.recurrences)
 			expect(root).not.toBeNull()
-			if (root !== null){
-			expect(almostEqual(Object.values(root)[0], 2)).toBe(true)
+			if (root !== null) {
+				expect(almostEqual(Object.values(root)[0], 2)).toBe(true)
 			}
 		}
 	})
@@ -102,9 +102,9 @@ describe("dominantRoot", () => {
 		expect(result.ok).toBe(true)
 		if (result.ok) {
 			const root = dominantRoot(result.recurrences)
-						expect(root).not.toBeNull()
-			if (root !== null){
-			expect(almostEqual(Object.values(root)[0], 1.61803398875)).toBe(true)
+			expect(root).not.toBeNull()
+			if (root !== null) {
+				expect(almostEqual(Object.values(root)[0], 1.61803398875)).toBe(true)
 			}
 		}
 	})
@@ -115,8 +115,8 @@ describe("dominantRoot", () => {
 		if (result.ok) {
 			const root = dominantRoot(result.recurrences)
 			expect(root).not.toBeNull()
-			if (root !== null){
-			expect(almostEqual(Object.values(root)[0], 1.83928675521)).toBe(true)
+			if (root !== null) {
+				expect(almostEqual(Object.values(root)[0], 1.83928675521)).toBe(true)
 			}
 		}
 	})
@@ -286,7 +286,7 @@ describe("utility functions", () => {
 	})
 
 	test("formatRoot should format single and multi-variable roots with new naming", () => {
-		expect(formatAsymptotics({n1: 2})).toBe("O(2^n1)")
+		expect(formatAsymptotics({ n1: 2 })).toBe("O(2^n1)")
 		expect(formatAsymptotics({ n_1: 2, k_2: 3 })).toBe("O(2^n_1·3^k_2)")
 	})
 })

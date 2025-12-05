@@ -5,12 +5,49 @@
 		type Recurrence,
 		type Root
 	} from "$lib/recurrence-solver"
+	import { browser } from "$app/environment"
 	import RecurrenceCard from "./RecurrenceCard.svelte"
 
 	// --- State setup ---
 	let S = $state<{ text: string; log: [Recurrence, Root][] }>({
 		text: "",
-		log: []
+		log: loadFromStorage()
+	})
+
+	// --- localStorage functions ---
+	function loadFromStorage(): [Recurrence, Root][] {
+		if (!browser) return []
+		try {
+			const stored = localStorage.getItem("recurrence-log")
+			return stored ? JSON.parse(stored) : []
+		} catch {
+			return []
+		}
+	}
+
+	// Save to localStorage whenever log changes
+	$effect(() => {
+		if (!browser) return
+		try {
+			if (S.log.length == 0) localStorage.removeItem("recurrence-log")
+			else localStorage.setItem("recurrence-log", JSON.stringify(S.log))
+		} catch {
+			// Handle storage errors silently
+		}
+	})
+
+	// Listen for localStorage changes from other tabs
+	$effect(() => {
+		if (!browser) return
+
+		function handleStorageChange(event: StorageEvent) {
+			if (event.key === "recurrence-log") {
+				S.log = loadFromStorage()
+			}
+		}
+
+		window.addEventListener("storage", handleStorageChange)
+		return () => window.removeEventListener("storage", handleStorageChange)
 	})
 
 	// --- Example systems ---
