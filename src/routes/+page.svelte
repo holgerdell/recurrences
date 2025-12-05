@@ -2,11 +2,10 @@
 	import {
 		parseRecurrences,
 		dominantRoot,
-		formatRecurrences,
-		formatRoot,
 		type Recurrence,
 		type Root
 	} from "$lib/recurrence-solver"
+	import RecurrenceCard from "./RecurrenceCard.svelte"
 
 	// --- State setup ---
 	let S = $state<{ text: string; log: [Recurrence, Root][] }>({
@@ -28,7 +27,7 @@
 
 	// --- Actions ---
 	function add(event: Event) {
-		event.preventDefault() // Prevent default form submission
+		event.preventDefault()
 		const lines = S.text.split(/\r?\n/).filter(Boolean)
 		const p = parseRecurrences(lines)
 		if (!p.ok) return
@@ -63,11 +62,11 @@
 	<div class="mb-8">
 		<h2 class="mb-4 text-lg font-medium text-slate-600">Examples</h2>
 		<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-			{#each examples as example}
+			{#each examples as example (example.equations)}
 				<div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
 					<h3 class="mb-2 font-medium text-slate-700">{example.title}</h3>
 					<div class="mb-3 space-y-0">
-						{#each example.equations as equation}
+						{#each example.equations as equation (equation)}
 							<code class="block bg-slate-100 px-2 py-2 text-sm text-slate-600">
 								{equation}
 							</code>
@@ -107,26 +106,15 @@
 	</form>
 
 	<!-- Current Parse Result -->
-	<div class="mb-8 rounded-lg border border-gray-200 bg-gray-50 p-4">
+	<div class="mb-8">
 		<h3 class="mb-3 font-medium text-gray-700">Current Input</h3>
-		{#if parsed.ok}
-			<div class="space-y-1">
-				{#each formatRecurrences(parsed.recurrences) as line}
-					<div class="font-mono text-sm text-gray-600">{line}</div>
-				{/each}
-				{#if x}
-					<div
-						class="mt-3 rounded border border-green-300 bg-green-100 p-2 font-medium text-green-800"
-					>
-						Asymptotics: {formatRoot(x, parsed.recurrences[0]?.vars)}
-					</div>
-				{/if}
-			</div>
-		{:else if S.text.trim()}
-			<div class="font-medium text-red-600">Error: {parsed.error}</div>
-		{:else}
-			<div class="text-gray-400 italic">No input provided</div>
-		{/if}
+		<RecurrenceCard
+			title="Preview"
+			recurrences={parsed.ok ? parsed.recurrences : undefined}
+			root={x}
+			error={parsed.ok ? undefined : parsed.error}
+			emptyMessage={S.text.trim() ? undefined : "No input provided"}
+		/>
 	</div>
 
 	<!-- Stored Results -->
@@ -149,40 +137,14 @@
 			</div>
 		{:else}
 			<div class="space-y-4">
-				{#each S.log as [recurrences, root], index}
-					<div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-						<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-							<!-- Recurrence Equations -->
-							<div class="flex-1">
-								<div class="mb-2 flex items-center justify-between">
-									<h4 class="font-medium text-gray-700">System #{index + 1}</h4>
-									<button
-										onclick={() => deleteResult(index)}
-										class="rounded bg-red-500 px-2 py-1 text-xs text-white transition-colors hover:bg-red-600"
-									>
-										Delete
-									</button>
-								</div>
-								<div class="space-y-1">
-									{#each formatRecurrences(recurrences) as line}
-										<div class="rounded bg-gray-50 px-2 py-1 font-mono text-sm text-gray-600">
-											{line}
-										</div>
-									{/each}
-								</div>
-							</div>
-
-							<!-- Asymptotics -->
-							<div class="lg:w-64 lg:text-right">
-								<div class="mb-1 text-sm text-gray-500">Asymptotics</div>
-								<div
-									class="rounded border border-green-200 bg-green-50 px-3 py-2 font-mono text-lg font-semibold text-green-700"
-								>
-									{formatRoot(root, recurrences[0]?.vars)}
-								</div>
-							</div>
-						</div>
-					</div>
+				{#each S.log as [recurrences, root], index (index)}
+					<RecurrenceCard
+						title="System #{index + 1}"
+						{recurrences}
+						{root}
+						showDelete={true}
+						onDelete={() => deleteResult(index)}
+					/>
 				{/each}
 			</div>
 		{/if}

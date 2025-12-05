@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { page } from "$app/state"
+	import { resolve } from "$app/paths"
+
 	import "./layout.css"
 	import favicon from "$lib/assets/favicon.svg"
 
@@ -23,9 +25,9 @@
 <div class="h-dvh w-dvw">
 	<div class="mx-auto min-h-full w-full max-w-2xl bg-slate-100">
 		<header class="flex flex-row flex-wrap gap-8 bg-white">
-			{#each links as { href, text, exact }}
+			{#each links as { href, text, exact } (href)}
 				<a
-					{href}
+					href={resolve(href)}
 					class="bg-black/10 p-4 not-aria-current:shadow hover:bg-blue-200! aria-current:bg-slate-100 aria-current:underline"
 					aria-current={isActive(href, exact, page.url.pathname)}
 				>
