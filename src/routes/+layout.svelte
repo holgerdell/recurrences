@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { page } from "$app/state"
 	import { resolve } from "$app/paths"
-
+	import type { Pathname } from "$app/types"
 	import "./layout.css"
 	import favicon from "$lib/assets/favicon.svg"
 
 	let { children } = $props()
 
-	type Link = { href: string; text: string; exact?: boolean }
+	type Link = { href: Pathname; text: string; exact?: boolean }
 
 	const links: Link[] = [
 		{ href: "/", text: "Recurrence relation solver", exact: true }

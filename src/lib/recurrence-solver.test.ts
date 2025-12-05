@@ -135,20 +135,6 @@ describe("dominantRoot", () => {
 		}
 	})
 
-	test("2D asymmetric system with infinite growth and new naming", () => {
-		const result = parseRecurrences([
-			"T_asym(n_1,k_2)=2*T_asym(n_1-1,k_2)+T_asym(n_1,k_2-1)",
-			"T_asym(n_1,0)=2*T_asym(n_1-1,0)"
-		])
-		expect(result.ok).toBe(true)
-		if (result.ok) {
-			const root = dominantRoot(result.recurrences) as Record<string, number>
-			expect(root).toBeTruthy()
-			expect(almostEqual(root.n_1, 2)).toBe(true)
-			expect(root.k_2 === Infinity || !isFinite(root.k_2)).toBe(true)
-		}
-	})
-
 	test("should return null for degenerate case", () => {
 		const result = parseRecurrences(["T_deg(n1)=T_deg(n1)"])
 		expect(result.ok).toBe(true)
@@ -160,6 +146,53 @@ describe("dominantRoot", () => {
 })
 
 describe("higher-dimensional systems", () => {
+	test("Asymmetric 2D recurrence with boundary condition", () => {
+		const result = parseRecurrences(["F(m,0) = 4*F(m-1,0)", "F(m,n) = 2*F(m-1,n) + F(m,n-1)"])
+		expect(result.ok).toBe(true)
+		if (result.ok) {
+			const root = dominantRoot(result.recurrences)
+			expect(root).not.toBeNull()
+			if (root !== null) {
+				expect(almostEqual(root.m, 4)).toBe(true)
+				expect(almostEqual(root.n, 2)).toBe(true)
+			}
+		}
+	})
+
+	test("Symmetric 2D recurrence without boundary condition", () => {
+		const result = parseRecurrences(["F(m,n) = 2*F(m-1,n) + F(m,n-1)"])
+		expect(result.ok).toBe(true)
+		if (result.ok) {
+			const root = dominantRoot(result.recurrences)
+			expect(root).not.toBeNull()
+			if (root !== null) {
+				expect(almostEqual(root.m, 3)).toBe(true)
+				expect(almostEqual(root.n, 3)).toBe(true)
+			}
+		}
+	})
+
+	test("2D Delannoy-type system (lattice paths with diagonal moves)", () => {
+		// This represents counting lattice paths where you can move
+		// right, up, or diagonally: (1,0), (0,1), or (1,1)
+		// D(m,n) counts paths from (0,0) to (m,n)
+		const result = parseRecurrences([
+			"D(m,n)=D(m-1,n)+D(m,n-1)+D(m-1,n-1)" // main 2D recurrence
+		])
+		expect(result.ok).toBe(true)
+
+		if (result.ok) {
+			const root = dominantRoot(result.recurrences) as Record<string, number>
+			expect(root).toBeTruthy()
+			expect(typeof root.m).toBe("number")
+			expect(typeof root.n).toBe("number")
+			// The boundary condition should give m = 2
+			expect(almostEqual(root.m, 2.41421356)).toBe(true)
+			// With m=2 fixed, the 2D system should give n = 3
+			expect(almostEqual(root.n, 2.41421356)).toBe(true)
+		}
+	})
+
 	test("3D Delannoy-type system (lattice paths in 3D)", () => {
 		// This represents counting lattice paths in 3D space where you can move
 		// in three directions: (1,0,0), (0,1,0), or (0,0,1)

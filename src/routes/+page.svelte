@@ -53,12 +53,14 @@
 	// --- Example systems ---
 	const examples = [
 		{
-			title: "1D: Fibonacci Sequence",
+			title: "Fibonacci Sequence",
 			equations: ["F(n)=F(n-1)+F(n-2)"]
 		},
 		{
-			title: "2D: Triangular System",
-			equations: ["T(n,k)=T(n-1,k)+T(n,k-1)", "T(n,0)=2*T(n-1,0)"]
+			title: "2D Delannoy System",
+			description:
+				"Lattice paths with diagonal moves. This represents counting lattice paths where you can move right, up, or diagonally: (1,0), (0,1), or (1,1). The number D(m,n) counts paths from (0,0) to (m,n)",
+			equations: ["D(m,n) = D(m,n-1) + D(m-1,n) + D(m-1,n-1)"]
 		}
 	]
 
@@ -102,6 +104,9 @@
 			{#each examples as example (example.equations)}
 				<div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
 					<h3 class="mb-2 font-medium text-slate-700">{example.title}</h3>
+					{#if example.description}
+						<p class="mb-3 text-sm text-slate-600">{example.description}</p>
+					{/if}
 					<div class="mb-3 space-y-0">
 						{#each example.equations as equation (equation)}
 							<code class="block bg-slate-100 px-2 py-2 text-sm text-slate-600">

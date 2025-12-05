@@ -1,10 +1,13 @@
 // --- Type definitions ---
-export type Term = {
-	coef: number
-	func: string
-	vars: string[]
-	offsets: Record<string, number>
-}
+export type Term =
+	| {
+			type: "function"
+			coef: number
+			func: string
+			vars: string[]
+			offsets: Record<string, number>
+	  }
+	| { type: "constant"; coef: number }
 
 export type TermBasedRecurrence = {
 	func: string
@@ -105,7 +108,6 @@ export function parseRecurrences(lines: string[]): ParseResult {
 
 		for (const a of rawArgs) {
 			if (IDENTIFIER_PATTERN.test(a)) {
-				// Validate variable name
 				vars.push(a)
 				fixedArgs.push(a)
 			} else if (/^-?\d+$/.test(a)) {
@@ -124,87 +126,116 @@ export function parseRecurrences(lines: string[]): ParseResult {
 			.filter(Boolean)
 		const rawTerms: Term[] = []
 
-		for (const summand of summands) {
-			const termRegex = new RegExp(
-				`^(?:(-?\\d+(?:\\.\\d+)?)\\*?)?([A-Za-z][A-Za-z0-9_]*)\\(([^)]*)\\)$`
-			)
-			const m = termRegex.exec(summand)
-			if (!m) return { ok: false, error: `Invalid term: ${summand}` }
+		// Check if RHS is just a constant (boundary condition)
+		if (summands.length === 1 && /^-?\d+(\.\d+)?$/.test(summands[0])) {
+			const constantValue = parseFloat(summands[0])
+			rawTerms.push({ type: "constant", coef: constantValue })
+		} else {
+			// Regular case: parse function calls
+			for (const summand of summands) {
+				const termRegex = new RegExp(
+					`^(?:(-?\\d+(?:\\.\\d+)?)\\*?)?([A-Za-z][A-Za-z0-9_]*)\\(([^)]*)\\)$`
+				)
+				const m = termRegex.exec(summand)
+				if (!m) return { ok: false, error: `Invalid term: ${summand}` }
 
-			const coef = m[1] ? parseFloat(m[1]) : 1
-			const fnName = m[2]
-			const argsRaw = m[3].split(",").map((a) => a.trim())
+				const coef = m[1] ? parseFloat(m[1]) : 1
+				const fnName = m[2]
+				const argsRaw = m[3].split(",").map((a) => a.trim())
 
-			// Validate function name in term
-			if (!IDENTIFIER_PATTERN.test(fnName)) {
-				return {
-					ok: false,
-					error: `Invalid function name '${fnName}' in term '${summand}': must match pattern [A-Za-z][A-Za-z0-9_]*`
-				}
-			}
-
-			if (fnName !== func)
-				return {
-					ok: false,
-					error: `Term '${summand}' uses a different function name (${fnName}) than LHS (${func})`
-				}
-
-			if (argsRaw.length !== globalArgCount)
-				return {
-					ok: false,
-					error: `Term '${summand}' has ${argsRaw.length} arguments, expected ${globalArgCount}`
-				}
-
-			const offsets: Record<string, number> = {}
-			let varIndex = 0
-			for (const arg of argsRaw) {
-				if (/^-?\d+$/.test(arg)) continue // skip constants
-				const v = vars[varIndex]
-				if (!v)
+				if (!IDENTIFIER_PATTERN.test(fnName)) {
 					return {
 						ok: false,
-						error: `Unexpected argument '${arg}' in term '${summand}'`
+						error: `Invalid function name '${fnName}' in term '${summand}': must match pattern [A-Za-z][A-Za-z0-9_]*`
 					}
-				const matchArg = new RegExp(`^${v}([+-]\\d+)?$`).exec(arg)
-				if (!matchArg)
-					return {
-						ok: false,
-						error: `Invalid argument '${arg}' in term '${summand}'`
-					}
-				const offset = matchArg[1] ? parseInt(matchArg[1], 10) : 0
-				offsets[v] = -offset
-				varIndex++
-			}
-
-			if (varIndex !== vars.length)
-				return {
-					ok: false,
-					error: `Term '${summand}' is missing variable arguments (${lhs})`
 				}
 
-			rawTerms.push({ coef, func, vars, offsets })
+				if (fnName !== func)
+					return {
+						ok: false,
+						error: `Term '${summand}' uses a different function name (${fnName}) than LHS (${func})`
+					}
+
+				if (argsRaw.length !== globalArgCount)
+					return {
+						ok: false,
+						error: `Term '${summand}' has ${argsRaw.length} arguments, expected ${globalArgCount}`
+					}
+
+				const offsets: Record<string, number> = {}
+				let varIndex = 0
+				for (const arg of argsRaw) {
+					if (/^-?\d+$/.test(arg)) continue
+					const v = vars[varIndex]
+					if (!v)
+						return {
+							ok: false,
+							error: `Unexpected argument '${arg}' in term '${summand}'`
+						}
+					const matchArg = new RegExp(`^${v}([+-]\\d+)?$`).exec(arg)
+					if (!matchArg)
+						return {
+							ok: false,
+							error: `Invalid argument '${arg}' in term '${summand}'`
+						}
+					const offset = matchArg[1] ? parseInt(matchArg[1], 10) : 0
+					offsets[v] = -offset
+					varIndex++
+				}
+
+				if (varIndex !== vars.length)
+					return {
+						ok: false,
+						error: `Term '${summand}' is missing variable arguments (${lhs})`
+					}
+
+				rawTerms.push({ type: "function", coef, func, vars, offsets })
+			}
 		}
 
 		// Combine identical terms
-		const combinedMap = new Map<string, number>()
+		const constantTerms: Term[] = []
+		const functionTermMap = new Map<string, number>()
+
 		for (const term of rawTerms) {
-			const key = vars.map((v) => term.offsets[v] ?? 0).join(",")
-			combinedMap.set(key, (combinedMap.get(key) ?? 0) + term.coef)
+			if (term.type === "constant") {
+				constantTerms.push(term)
+			} else {
+				const key = vars.map((v) => term.offsets[v] ?? 0).join(",")
+				functionTermMap.set(key, (functionTermMap.get(key) ?? 0) + term.coef)
+			}
 		}
 
 		const terms: Term[] = []
-		for (const [key, coef] of combinedMap) {
+
+		// Add constants
+		if (constantTerms.length > 0) {
+			const totalConstant = constantTerms.reduce((sum, t) => sum + t.coef, 0)
+			if (Math.abs(totalConstant) >= 1e-12) {
+				terms.push({ type: "constant", coef: totalConstant })
+			}
+		}
+
+		// Add function terms
+		for (const [key, coef] of functionTermMap) {
 			if (Math.abs(coef) < 1e-12) continue
 			const offsets: Record<string, number> = {}
 			const values = key.split(",").map(Number)
 			vars.forEach((v, i) => (offsets[v] = values[i]))
-			terms.push({ coef, func, vars, offsets })
+			terms.push({ type: "function", coef, func, vars, offsets })
 		}
 
 		terms.sort((a, b) => {
-			for (const v of vars) {
-				const diff = (a.offsets[v] ?? 0) - (b.offsets[v] ?? 0)
-				if (diff !== 0) return diff
+			if (a.type === "constant" && b.type === "function") return -1
+			if (a.type === "function" && b.type === "constant") return 1
+			if (a.type === "constant" && b.type === "constant") return 0
+
+			// Both are function terms
+			if (a.type === "function" && b.type === "function") {
+				for (const v of vars) {
+					const diff = (a.offsets[v] ?? 0) - (b.offsets[v] ?? 0)
+					if (diff !== 0) return diff
+				}
 			}
 			return 0
 		})
@@ -214,46 +245,28 @@ export function parseRecurrences(lines: string[]): ParseResult {
 
 	if (recurrences.length === 0) return { ok: false, error: "No valid recurrence lines found" }
 
-	// Validate hierarchical structure for multi-dimensional systems
-	const dimensionCounts = new Map<number, number>()
-	for (const r of recurrences) {
-		const dim = r.vars.length
-		dimensionCounts.set(dim, (dimensionCounts.get(dim) ?? 0) + 1)
-	}
-
-	const maxDim = Math.max(...dimensionCounts.keys())
-
-	// For systems with multiple dimensions, validate hierarchical structure
-	if (maxDim > 1) {
-		for (let d = 1; d < maxDim; d++) {
-			if (!dimensionCounts.has(d)) {
-				return {
-					ok: false,
-					error: `Missing ${d}D boundary condition for ${maxDim}D system`
-				}
-			}
-		}
-	}
-
 	return { ok: true, recurrences }
 }
 
 // --- Formatter ---
 export function formatRecurrences(recurrences: Recurrence): string[] {
 	return recurrences.map(({ func, vars, terms, fixedArgs }) => {
-		// LHS: use fixedArgs if available
 		const lhsArgs = fixedArgs?.length ? fixedArgs.map(String).join(",") : vars.join(",")
 		const lhs = `${func}(${lhsArgs})`
 
-		const rhsParts = terms.map(({ coef, offsets }) => {
-			let coefStr = ""
-			if (coef !== 1 && coef !== -1) coefStr = coef.toString() + "*"
-			else if (coef === -1) coefStr = "-"
+		const rhsParts = terms.map((term) => {
+			if (term.type === "constant") {
+				return String(term.coef)
+			}
 
-			// Replace the variable arguments inside fixedArgs
+			// Function term
+			let coefStr = ""
+			if (term.coef !== 1 && term.coef !== -1) coefStr = term.coef.toString() + "*"
+			else if (term.coef === -1) coefStr = "-"
+
 			const args = (fixedArgs ?? vars).map((arg) => {
-				if (typeof arg === "number") return String(arg) // constant stays constant
-				const off = offsets[arg] ?? 0
+				if (typeof arg === "number") return String(arg)
+				const off = term.offsets[arg] ?? 0
 				if (off === 0) return arg
 				if (off > 0) return `${arg}-${off}`
 				return `${arg}+${-off}`
@@ -272,15 +285,21 @@ function solve1D(r: TermBasedRecurrence, v: string): number | null {
 	const terms = r.terms
 	if (!terms.length) return null
 
-	const degree = Math.max(...terms.map((t) => t.offsets[v]))
+	// Filter to only function terms for characteristic equation
+	const functionTerms = terms.filter(
+		(t): t is Extract<Term, { type: "function" }> => t.type === "function"
+	)
+	if (!functionTerms.length) return null
+
+	const degree = Math.max(...functionTerms.map((t) => t.offsets[v] ?? 0))
 	if (degree === 0) return null
 
 	// Build polynomial coefficients for x^degree - Σ coef*x^(degree - offset)
 	const coeffs = Array(degree + 1).fill(0)
 	coeffs[0] = 1
-	for (const { coef, offsets } of terms) {
-		const off = offsets[v]
-		if (off <= degree) coeffs[off] -= coef
+	for (const term of functionTerms) {
+		const off = term.offsets[v] ?? 0
+		if (off <= degree) coeffs[off] -= term.coef
 	}
 	if (coeffs.every((c) => Math.abs(c) < 1e-14)) return null
 
@@ -293,7 +312,7 @@ function solve1D(r: TermBasedRecurrence, v: string): number | null {
 
 	// Numeric brackets
 	let lo = 0.0001
-	let hi = Math.max(2, ...terms.map((t) => Math.abs(t.coef))) * 2
+	let hi = Math.max(2, ...functionTerms.map((t) => Math.abs(t.coef))) * 2
 	let flo = f(lo)
 	let fhi = f(hi)
 
@@ -338,17 +357,22 @@ function solveNDimensional(
 	// Build equation: find y such that Σ coef * ∏(fixedRoot^(-offset_i) * y^(-offset_solveVar)) = 1
 	function f(y: number): number {
 		let sum = 0
-		for (const t of terms) {
-			let termValue = t.coef
+		for (const term of terms) {
+			if (term.type === "constant") {
+				// Constant terms don't participate in characteristic equation
+				continue
+			}
+
+			let termValue = term.coef
 
 			// Apply fixed roots
 			for (const [fixedVar, fixedRoot] of Object.entries(fixedRoots)) {
-				const offset = t.offsets[fixedVar] ?? 0
+				const offset = term.offsets[fixedVar] ?? 0
 				termValue *= Math.pow(fixedRoot, -offset)
 			}
 
 			// Apply the variable we're solving for
-			const offset = t.offsets[solveVar] ?? 0
+			const offset = term.offsets[solveVar] ?? 0
 			termValue *= Math.pow(y, -offset)
 
 			sum += termValue
@@ -357,8 +381,11 @@ function solveNDimensional(
 	}
 
 	// Search for positive root
+	const functionTerms = terms.filter(
+		(t): t is Extract<Term, { type: "function" }> => t.type === "function"
+	)
 	let lo = 0.0001
-	let hi = Math.max(2, ...terms.map((t) => Math.abs(t.coef))) * 2
+	let hi = Math.max(2, ...functionTerms.map((t) => Math.abs(t.coef))) * 2
 	let flo = f(lo)
 	let fhi = f(hi)
 
@@ -397,54 +424,233 @@ function solveNDimensional(
 	return snapInt(0.5 * (lo + hi))
 }
 
+function solve2DCharacteristic(rec: TermBasedRecurrence): Root | null {
+	if (rec.vars.length !== 2) return null
+
+	const [var1, var2] = rec.vars
+	const terms = rec.terms
+
+	// Characteristic equation: 1 = Σ coef_i * x^(-offset1_i) * y^(-offset2_i)
+	function characteristicFunction(x: number, y: number): number {
+		let sum = 0
+		for (const term of terms) {
+			if (term.type === "constant") {
+				// Constant terms don't participate in characteristic equation
+				continue
+			}
+
+			const offset1 = term.offsets[var1] ?? 0
+			const offset2 = term.offsets[var2] ?? 0
+			sum += term.coef * Math.pow(x, -offset1) * Math.pow(y, -offset2)
+		}
+		return 1 - sum
+	}
+
+	const ACCEPTABLE_ERROR = 1e-10
+
+	// Try different solution strategies
+
+	// Strategy 1: Assume symmetric solution (x = y)
+	const symmetricSolution = solveSymmetricCase()
+	if (symmetricSolution) return symmetricSolution
+
+	// Strategy 2: Fix x, solve for y (and vice versa)
+	const fixedVarSolution = solveByFixingOneVariable()
+	if (fixedVarSolution) return fixedVarSolution
+
+	// Strategy 3: Parametric search along different curves
+	const parametricSolution = solveParametrically()
+	if (parametricSolution) return parametricSolution
+
+	return null
+
+	function solveSymmetricCase(): Record<string, number> | null {
+		// For x = y, we have: 1 = Σ coef_i * x^(-(offset1_i + offset2_i))
+		function symmetricCharacteristic(x: number): number {
+			return characteristicFunction(x, x)
+		}
+
+		// Use 1D root finding
+		const root = find1DRoot(symmetricCharacteristic, 1.01, 10)
+		if (root && Math.abs(symmetricCharacteristic(root)) < ACCEPTABLE_ERROR) {
+			return { [var1]: snapInt(root), [var2]: snapInt(root) }
+		}
+		return null
+	}
+
+	function solveByFixingOneVariable(): Record<string, number> | null {
+		// Try fixing x at various values and solving for y
+		for (let x = 1.1; x <= 5; x += 0.1) {
+			function solveForY(y: number): number {
+				return characteristicFunction(x, y)
+			}
+
+			const y = find1DRoot(solveForY, 1.01, 10)
+			if (y && Math.abs(solveForY(y)) < ACCEPTABLE_ERROR) {
+				return { [var1]: snapInt(x), [var2]: snapInt(y) }
+			}
+		}
+
+		// Try fixing y at various values and solving for x
+		for (let y = 1.1; y <= 5; y += 0.1) {
+			function solveForX(x: number): number {
+				return characteristicFunction(x, y)
+			}
+
+			const x = find1DRoot(solveForX, 1.01, 10)
+			if (x && Math.abs(solveForX(x)) < ACCEPTABLE_ERROR) {
+				return { [var1]: snapInt(x), [var2]: snapInt(y) }
+			}
+		}
+
+		return null
+	}
+
+	function solveParametrically(): Record<string, number> | null {
+		// Try parametric curves: y = a*x + b for various a, b
+		const parameterizations = [
+			{ a: 1, b: 0 }, // y = x
+			{ a: 1, b: 0.1 }, // y = x + 0.1
+			{ a: 1, b: -0.1 }, // y = x - 0.1
+			{ a: 1.1, b: 0 }, // y = 1.1*x
+			{ a: 0.9, b: 0 }, // y = 0.9*x
+			{ a: 0, b: 1 } // y = 1 (constant)
+		]
+
+		for (const { a, b } of parameterizations) {
+			function parametricCharacteristic(x: number): number {
+				const y = a * x + b
+				if (y <= 1) return Infinity // Invalid region
+				return characteristicFunction(x, y)
+			}
+
+			const x = find1DRoot(parametricCharacteristic, 1.01, 10)
+			if (x) {
+				const y = a * x + b
+				if (y > 1 && Math.abs(characteristicFunction(x, y)) < ACCEPTABLE_ERROR) {
+					return { [var1]: snapInt(x), [var2]: snapInt(y) }
+				}
+			}
+		}
+
+		return null
+	}
+
+	function find1DRoot(f: (x: number) => number, minX: number, maxX: number): number | null {
+		// Expand search range if needed
+		let lo = minX
+		let hi = maxX
+		let flo = f(lo)
+		let fhi = f(hi)
+
+		// Expand hi until sign change
+		while (flo * fhi > 0 && hi < 100) {
+			lo = hi
+			hi *= 2
+			flo = fhi
+			fhi = f(hi)
+		}
+
+		if (flo * fhi > 0) return null // No sign change found
+
+		// Bisection method
+		for (let iter = 0; iter < 100; iter++) {
+			const mid = 0.5 * (lo + hi)
+			const fmid = f(mid)
+
+			if (Math.abs(fmid) < 1e-14) return mid
+
+			if (flo * fmid < 0) {
+				hi = mid
+				fhi = fmid
+			} else {
+				lo = mid
+				flo = fmid
+			}
+
+			if (hi - lo < 1e-14) break
+		}
+
+		return 0.5 * (lo + hi)
+	}
+}
+
 export function dominantRoot(recurrences: Recurrence): Root | null {
 	if (!recurrences?.length) return null
 
 	// Sort by dimension (ascending)
 	const sortedRecs = [...recurrences].sort((a, b) => a.vars.length - b.vars.length)
-	const maxDim = sortedRecs[sortedRecs.length - 1].vars.length
 
-	// --- 1D case -------------------------------------------------------
-	if (maxDim === 1) {
-		const r1 = sortedRecs[0]
-		if (r1.vars.length !== 1) return null
-		const v = r1.vars[0]
-		const root = solve1D(r1, r1.vars[0])
-		if (root === null) return null
-		return { [v]: root }
+	// Filter out boundary conditions (recurrences with only constant terms)
+	const actualRecurrences = sortedRecs.filter((rec) =>
+		rec.terms.some((term) => term.type === "function")
+	)
+
+	// If no actual recurrences, the function is constant → O(1)
+	if (!actualRecurrences.length) {
+		const allVars = new Set<string>()
+		sortedRecs.forEach((rec) => rec.vars.forEach((v) => allVars.add(v)))
+		const roots: Record<string, number> = {}
+		allVars.forEach((v) => (roots[v] = 1))
+		return roots
 	}
 
-	// --- Multi-dimensional case ----------------------------------------
+	// Build solution progressively from lower to higher dimensions
 	const roots: Record<string, number> = {}
 
-	// Solve hierarchically from lowest to highest dimension
-	for (let dim = 1; dim <= maxDim; dim++) {
-		const currentRecs = sortedRecs.filter((r) => r.vars.length === dim)
+	for (const rec of actualRecurrences) {
+		const unknownVars = rec.vars.filter((v) => !(v in roots))
 
-		if (currentRecs.length === 0) {
-			return null // Missing dimension
-		}
+		if (unknownVars.length === 0) {
+			// All variables already solved - skip this recurrence
+			continue
+		} else if (unknownVars.length === 1) {
+			// Solve for the single unknown variable
+			const solveVar = unknownVars[0]
 
-		// For now, take the first recurrence of this dimension
-		const currentRec = currentRecs[0]
+			if (rec.vars.length === 1) {
+				// Pure 1D case
+				const root = solve1D(rec, solveVar)
+				if (root !== null) {
+					roots[solveVar] = root
+				}
+			} else {
+				// Multi-dimensional with constraints
+				const constraintRoots: Record<string, number> = {}
+				rec.vars.forEach((v) => {
+					if (v in roots) constraintRoots[v] = roots[v]
+				})
 
-		if (dim === 1) {
-			// Base case: solve 1D directly
-			const root = solve1D(currentRec, currentRec.vars[0])
-			if (root === null || root <= 0) return null
-			roots[currentRec.vars[0]] = root
+				const newRoot = solveNDimensional(rec, constraintRoots)
+				if (newRoot !== null) {
+					roots[solveVar] = newRoot
+				}
+			}
+		} else if (rec.vars.length === 2 && unknownVars.length === 2) {
+			// Pure 2D case with no constraints
+			const result = solve2DCharacteristic(rec)
+			if (result) {
+				Object.assign(roots, result)
+			}
 		} else {
-			// Higher dimension: solve with fixed lower-dimensional roots
-			const newRoot = solveNDimensional(currentRec, roots)
-			if (newRoot === null) return null
+			// Higher dimensions with multiple unknowns - use heuristic
+			// Set all but last unknown to 1, solve for the last
+			for (let i = 0; i < unknownVars.length - 1; i++) {
+				roots[unknownVars[i]] = 1
+			}
 
-			// Find the new variable (not in previous dimensions)
-			const newVar = currentRec.vars.find((v) => !(v in roots))
-			if (!newVar) return null
+			const lastVar = unknownVars[unknownVars.length - 1]
+			const constraintRoots: Record<string, number> = {}
+			rec.vars.forEach((v) => {
+				if (v in roots) constraintRoots[v] = roots[v]
+			})
 
-			roots[newVar] = newRoot
+			const newRoot = solveNDimensional(rec, constraintRoots)
+			if (newRoot !== null) {
+				roots[lastVar] = newRoot
+			}
 		}
 	}
 
-	return roots
+	return Object.keys(roots).length > 0 ? roots : null
 }
