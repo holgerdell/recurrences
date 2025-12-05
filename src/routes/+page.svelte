@@ -2,15 +2,25 @@
 	import { browser } from "$app/environment"
 	import RecurrenceCard from "./RecurrenceCard.svelte"
 	import type { Root } from "$lib/root-finding"
-	import { parseRecurrences, solveRecurrenceSystem, type Recurrence } from "$lib/recurrence-solver"
+	import {
+		formatRecurrences,
+		parseRecurrences,
+		solveRecurrenceSystem,
+		type Recurrence
+	} from "$lib/recurrence-solver"
 
 	// --- State setup ---
-	let S = $state<{ text: string; log: [Recurrence, Root][] }>({
+	let S = $state<{ text: string; log: Recurrence[] }>({
 		text: "",
 		log: loadFromStorage()
 	})
 
-	// --- Initialize from URL and keep S.text in sync ---
+	// --- Recompute roots for stored recurrences once on client ---
+	let storedRoots: (Root | null)[] = $derived(
+		browser && S.log.length ? S.log.map((r) => solveRecurrenceSystem(r)) : []
+	)
+
+	// --- URL initialization ---
 	if (browser) {
 		const params = new URLSearchParams(location.search)
 		const q = params.get("q")
@@ -18,7 +28,7 @@
 	}
 
 	// --- localStorage functions ---
-	function loadFromStorage(): [Recurrence, Root][] {
+	function loadFromStorage(): Recurrence[] {
 		if (!browser) return []
 		try {
 			const stored = localStorage.getItem("recurrence-log")
@@ -32,28 +42,27 @@
 	$effect(() => {
 		if (!browser) return
 		try {
-			if (S.log.length == 0) localStorage.removeItem("recurrence-log")
+			if (S.log.length === 0) localStorage.removeItem("recurrence-log")
 			else localStorage.setItem("recurrence-log", JSON.stringify(S.log))
 		} catch {
-			// Handle storage errors silently
+			/* silent */
 		}
 	})
 
 	// Listen for localStorage changes from other tabs
 	$effect(() => {
 		if (!browser) return
-
-		function handleStorageChange(event: StorageEvent) {
-			if (event.key === "recurrence-log") {
+		function handleStorageChange(e: StorageEvent) {
+			if (e.key === "recurrence-log") {
 				S.log = loadFromStorage()
+				storedRoots = S.log.map((r) => solveRecurrenceSystem(r))
 			}
 		}
-
 		window.addEventListener("storage", handleStorageChange)
 		return () => window.removeEventListener("storage", handleStorageChange)
 	})
 
-	// --- Update URL when S.text changes ---
+	// --- Sync URL to text ---
 	$effect(() => {
 		if (!browser) return
 		const q = S.text.trim()
@@ -63,7 +72,6 @@
 		}
 	})
 
-	// --- Keep S.text updated if URL manually changed (back/forward/nav) ---
 	if (browser) {
 		window.addEventListener("popstate", () => {
 			const params = new URLSearchParams(location.search)
@@ -72,16 +80,7 @@
 		})
 	}
 
-	// --- Computed share link ---
-	let shareUrl = $derived(() =>
-		browser
-			? location.origin +
-				location.pathname +
-				(S.text.trim() ? `?q=${encodeURIComponent(S.text)}` : "")
-			: ""
-	)
-
-	// --- Example systems ---
+	// --- Examples ---
 	const examples = [
 		{
 			title: "Fibonacci Sequence",
@@ -90,35 +89,38 @@
 		{
 			title: "2D Delannoy System",
 			description:
-				"Lattice paths with diagonal moves. This represents counting lattice paths where you can move right, up, or diagonally: (1,0), (0,1), or (1,1). The number D(m,n) counts paths from (0,0) to (m,n)",
-			equations: ["D(m,n) = D(m,n-1) + D(m-1,n) + D(m-1,n-1)"]
+				"Lattice paths with diagonal moves. You can move right, up, or diagonally (1,0), (0,1), (1,1).",
+			equations: ["D(m,n)=D(m,n-1)+D(m-1,n)+D(m-1,n-1)"]
 		}
-	]
+	].map((x) => {
+		const result = parseRecurrences(x.equations)
+		if (!result.ok) throw Error
+		return { ...x, recurrences: result.recurrences }
+	})
 
 	// --- Actions ---
-	function add(event: Event) {
-		event.preventDefault()
+	function add() {
 		const lines = S.text.split(/\r?\n/).filter(Boolean)
 		const p = parseRecurrences(lines)
 		if (!p.ok) return
-
 		const last = S.log.at(-1)
-		if (last && JSON.stringify(last[0]) === JSON.stringify(p.recurrences)) return
-
-		const x = solveRecurrenceSystem(p.recurrences)
-		if (x) S.log.push([p.recurrences, x])
+		if (last && JSON.stringify(last) === JSON.stringify(p.recurrences)) return
+		S.log.push(p.recurrences)
+		storedRoots.push(solveRecurrenceSystem(p.recurrences))
 	}
 
-	function loadExample(equations: string[]) {
-		S.text = equations.join("\n")
+	function loadRecurrence(r: Recurrence) {
+		S.text = formatRecurrences(r).join("\n")
 	}
 
 	function clearLog() {
 		S.log = []
+		storedRoots = []
 	}
 
 	function deleteResult(index: number) {
 		S.log = S.log.filter((_, i) => i !== index)
+		storedRoots.splice(index, 1)
 	}
 
 	let parsed = $derived(parseRecurrences(S.text.split(/\r?\n/).filter(Boolean)))
@@ -128,71 +130,28 @@
 <div class="mx-auto max-w-4xl p-6">
 	<h1 class="mb-8 text-3xl font-bold text-gray-800">Recurrence Relation Solver</h1>
 
-	<!-- Examples Section -->
-	<div class="mb-8">
-		<h2 class="mb-4 text-lg font-medium text-slate-600">Examples</h2>
-		<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-			{#each examples as example (example.equations)}
-				<div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
-					<h3 class="mb-2 font-medium text-slate-700">{example.title}</h3>
-					{#if example.description}
-						<p class="mb-3 text-sm text-slate-600">{example.description}</p>
-					{/if}
-					<div class="mb-3 space-y-0">
-						{#each example.equations as equation (equation)}
-							<code class="block bg-slate-100 px-2 py-2 text-sm text-slate-600">
-								{equation}
-							</code>
-						{/each}
-					</div>
-					<button
-						onclick={() => loadExample(example.equations)}
-						class="rounded bg-slate-600 px-3 py-1 text-sm text-white transition-colors hover:bg-slate-700"
-					>
-						Load Example
-					</button>
-				</div>
-			{/each}
-		</div>
-	</div>
-
 	<!-- Input Section -->
-	<form onsubmit={add} class="mb-8">
-		<div class="flex flex-col">
-			<label for="recurrence-input" class="mb-2 font-medium text-gray-700">
-				Enter one or more recurrence relations (each on a new line):
-			</label>
-			<textarea
-				id="recurrence-input"
-				bind:value={S.text}
-				rows="4"
-				placeholder="Enter recurrence relations here..."
-				class="rounded-lg border border-gray-300 p-3 font-mono transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-			></textarea>
-		</div>
-		<button
-			type="submit"
-			class="mt-3 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700"
-		>
-			Add Recurrence(s)
-		</button>
-	</form>
-	<!-- {#if S.text.trim()}
-		<div class="mb-8 text-sm break-all text-slate-600">
-			Share this recurrence:
-			<a href={shareUrl} class="text-blue-600 underline">link</a>
-		</div>
-	{/if} -->
-
-	<!-- Current Parse Result -->
-	<div class="mb-8">
-		<h3 class="mb-3 font-medium text-gray-700">Current Input</h3>
+	<div class="mb-8 flex flex-col gap-4">
+		<label for="recurrence-input" class="mb-2 font-medium text-gray-700">
+			Enter one or more recurrence relations (each on a new line):
+		</label>
+		<textarea
+			id="recurrence-input"
+			bind:value={S.text}
+			rows="4"
+			placeholder="Enter recurrence relations here..."
+			class="rounded-lg border border-gray-300 p-3 font-mono transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+		></textarea>
 		<RecurrenceCard
 			title="Preview"
 			recurrences={parsed.ok ? parsed.recurrences : undefined}
 			root={x}
 			error={parsed.ok ? undefined : parsed.error}
+			kind="current"
 			emptyMessage={S.text.trim() ? undefined : "No input provided"}
+			onSelect={() => {
+				add()
+			}}
 		/>
 	</div>
 
@@ -215,17 +174,36 @@
 				No stored recurrences yet. Add some above!
 			</div>
 		{:else}
-			<div class="space-y-4">
-				{#each S.log as [recurrences, root], index (index)}
+			<div class="mb-12 space-y-4">
+				{#each S.log as recurrences, index (index)}
 					<RecurrenceCard
-						title="System #{index + 1}"
+						title={`System #${index + 1}`}
 						{recurrences}
-						{root}
+						root={storedRoots[index]}
 						showDelete={true}
+						kind="stored"
 						onDelete={() => deleteResult(index)}
+						onSelect={() => loadRecurrence(recurrences)}
 					/>
 				{/each}
 			</div>
 		{/if}
+	</div>
+
+	<!-- Examples Section (moved below stored recurrences) -->
+	<div class="mb-8">
+		<h2 class="mb-4 text-xl font-semibold text-gray-800">Examples</h2>
+		<div class="space-y-4">
+			{#each examples as ex, i (i)}
+				<RecurrenceCard
+					title={ex.title}
+					recurrences={ex.recurrences}
+					root={solveRecurrenceSystem(ex.recurrences)}
+					description={ex.description}
+					kind="example"
+					onSelect={() => loadRecurrence(ex.recurrences)}
+				/>
+			{/each}
+		</div>
 	</div>
 </div>

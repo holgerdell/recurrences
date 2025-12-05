@@ -51,7 +51,7 @@ describe("Polynomial evaluation", () => {
 		const m: Monomial = { x: 2, y: 1 }
 		const vals: Root = { x: 3, y: 4 }
 		// 3^2 * 4^1 = 9 * 4 = 36
-		expect((evaluateMonomial as any)(m, vals)).toBe(36)
+		expect(evaluateMonomial(m, vals)).toBe(36)
 	})
 
 	test("evaluatePolynomial should sum all term contributions", () => {
@@ -267,7 +267,7 @@ test("should correctly solve an asymmetric 3D system with distinct roots", () =>
 	const root = dominantRoot(sys)!
 	expect(root.x).toBe(2)
 	expect(root.y).toBe(6)
-	expect(almostEqual(root.z, 2.8235294117647058)).toBe(true)
+	expect(almostEqual(root.z, 2.8235294117)).toBe(true)
 })
 
 test("should solve a 3D system with mixed coefficients creating non-equal finite roots", () => {
