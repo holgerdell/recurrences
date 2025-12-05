@@ -10,6 +10,13 @@
 		log: loadFromStorage()
 	})
 
+	// --- Initialize from URL and keep S.text in sync ---
+	if (browser) {
+		const params = new URLSearchParams(location.search)
+		const q = params.get("q")
+		if (q) S.text = decodeURIComponent(q)
+	}
+
 	// --- localStorage functions ---
 	function loadFromStorage(): [Recurrence, Root][] {
 		if (!browser) return []
@@ -45,6 +52,34 @@
 		window.addEventListener("storage", handleStorageChange)
 		return () => window.removeEventListener("storage", handleStorageChange)
 	})
+
+	// --- Update URL when S.text changes ---
+	$effect(() => {
+		if (!browser) return
+		const q = S.text.trim()
+		const newUrl = q ? `${location.pathname}?q=${encodeURIComponent(q)}` : location.pathname
+		if (location.search !== (q ? `?q=${encodeURIComponent(q)}` : "")) {
+			history.replaceState(null, "", newUrl)
+		}
+	})
+
+	// --- Keep S.text updated if URL manually changed (back/forward/nav) ---
+	if (browser) {
+		window.addEventListener("popstate", () => {
+			const params = new URLSearchParams(location.search)
+			const q = params.get("q")
+			S.text = q ? decodeURIComponent(q) : ""
+		})
+	}
+
+	// --- Computed share link ---
+	let shareUrl = $derived(() =>
+		browser
+			? location.origin +
+				location.pathname +
+				(S.text.trim() ? `?q=${encodeURIComponent(S.text)}` : "")
+			: ""
+	)
 
 	// --- Example systems ---
 	const examples = [
@@ -142,6 +177,12 @@
 			Add Recurrence(s)
 		</button>
 	</form>
+	<!-- {#if S.text.trim()}
+		<div class="mb-8 text-sm break-all text-slate-600">
+			Share this recurrence:
+			<a href={shareUrl} class="text-blue-600 underline">link</a>
+		</div>
+	{/if} -->
 
 	<!-- Current Parse Result -->
 	<div class="mb-8">
