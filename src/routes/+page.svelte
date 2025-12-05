@@ -276,7 +276,7 @@
 </script>
 
 <h1 class="font-bold text-2xl mb-12">Recurrence relation solver</h1>
-<p>Write a recurrence relation:</p>
+<p>Write a 1-dimensional recurrence relation:</p>
 <div class="flex gap-4 items-center">
 	<form onsubmit={add}>
 		<!-- svelte-ignore a11y_autofocus -->
