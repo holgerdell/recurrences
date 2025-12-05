@@ -53,18 +53,16 @@
 					</button>
 				{/if}
 
-				{#if onSelect && !error}
+				{#if onSelect && !error && kind !== "current"}
 					<button
 						onclick={onSelect}
 						class={`rounded px-2 py-1 text-xs text-white transition-colors ${
 							kind === "example"
 								? "bg-blue-600 hover:bg-blue-700"
-								: kind === "current"
-									? "bg-green-600 hover:bg-green-700"
-									: "bg-blue-600 hover:bg-blue-700"
+								: "bg-green-600 hover:bg-green-700"
 						}`}
 					>
-						{kind === "example" ? "Load Example" : kind === "current" ? "Add to Stored" : "Load"}
+						{kind === "example" ? "Load Example" : "Load"}
 					</button>
 				{/if}
 
