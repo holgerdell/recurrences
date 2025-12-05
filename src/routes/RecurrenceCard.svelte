@@ -1,10 +1,6 @@
 <script lang="ts">
-	import {
-		formatRecurrences,
-		formatAsymptotics,
-		type Recurrence,
-		type Root
-	} from "$lib/recurrence-solver"
+	import { formatRecurrences, type Recurrence } from "$lib/recurrence-solver"
+	import { type Root, formatAsymptotics } from "$lib/root-finding"
 
 	interface Props {
 		title: string

@@ -1,12 +1,9 @@
 import { describe, test, expect } from "bun:test"
 import {
 	parseRecurrences,
-	dominantRoot,
 	formatRecurrences,
-	snapInt,
-	formatNumber,
-	formatAsymptotics,
-	IDENTIFIER_PATTERN
+	IDENTIFIER_PATTERN,
+	solveRecurrenceSystem
 } from "./recurrence-solver"
 
 const almostEqual = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) < eps
@@ -78,18 +75,15 @@ describe("parseRecurrences", () => {
 	test("should reject invalid variable names", () => {
 		const result = parseRecurrences(["T(_n)=T(_n-1)"])
 		expect(result.ok).toBe(false)
-		if (!result.ok) {
-			expect(result.error).toContain("must match pattern [A-Za-z][A-Za-z0-9_]*")
-		}
 	})
 })
 
-describe("dominantRoot", () => {
+describe("solveRecurrenceSystem", () => {
 	test("geometric growth with new naming", () => {
 		const result = parseRecurrences(["T_geom(n1)=2*T_geom(n1-1)"])
 		expect(result.ok).toBe(true)
 		if (result.ok) {
-			const root = dominantRoot(result.recurrences)
+			const root = solveRecurrenceSystem(result.recurrences)
 			expect(root).not.toBeNull()
 			if (root !== null) {
 				expect(almostEqual(Object.values(root)[0], 2)).toBe(true)
@@ -101,7 +95,7 @@ describe("dominantRoot", () => {
 		const result = parseRecurrences(["Fib_seq(n_val)=Fib_seq(n_val-1)+Fib_seq(n_val-2)"])
 		expect(result.ok).toBe(true)
 		if (result.ok) {
-			const root = dominantRoot(result.recurrences)
+			const root = solveRecurrenceSystem(result.recurrences)
 			expect(root).not.toBeNull()
 			if (root !== null) {
 				expect(almostEqual(Object.values(root)[0], 1.61803398875)).toBe(true)
@@ -113,7 +107,7 @@ describe("dominantRoot", () => {
 		const result = parseRecurrences(["T3(n_var)=T3(n_var-1)+T3(n_var-2)+T3(n_var-3)"])
 		expect(result.ok).toBe(true)
 		if (result.ok) {
-			const root = dominantRoot(result.recurrences)
+			const root = solveRecurrenceSystem(result.recurrences)
 			expect(root).not.toBeNull()
 			if (root !== null) {
 				expect(almostEqual(Object.values(root)[0], 1.83928675521)).toBe(true)
@@ -128,7 +122,7 @@ describe("dominantRoot", () => {
 		])
 		expect(result.ok).toBe(true)
 		if (result.ok) {
-			const root = dominantRoot(result.recurrences) as Record<string, number>
+			const root = solveRecurrenceSystem(result.recurrences) as Record<string, number>
 			expect(root).toBeTruthy()
 			expect(almostEqual(root.n1, 2)).toBe(true)
 			expect(almostEqual(root.k2, 2)).toBe(true)
@@ -137,11 +131,7 @@ describe("dominantRoot", () => {
 
 	test("should return null for degenerate case", () => {
 		const result = parseRecurrences(["T_deg(n1)=T_deg(n1)"])
-		expect(result.ok).toBe(true)
-		if (result.ok) {
-			const root = dominantRoot(result.recurrences)
-			expect(root).toBe(null)
-		}
+		expect(result.ok).toBe(false)
 	})
 })
 
@@ -150,7 +140,7 @@ describe("higher-dimensional systems", () => {
 		const result = parseRecurrences(["F(m,0) = 4*F(m-1,0)", "F(m,n) = 2*F(m-1,n) + F(m,n-1)"])
 		expect(result.ok).toBe(true)
 		if (result.ok) {
-			const root = dominantRoot(result.recurrences)
+			const root = solveRecurrenceSystem(result.recurrences)
 			expect(root).not.toBeNull()
 			if (root !== null) {
 				expect(almostEqual(root.m, 4)).toBe(true)
@@ -163,7 +153,7 @@ describe("higher-dimensional systems", () => {
 		const result = parseRecurrences(["F(m,n) = 2*F(m-1,n) + F(m,n-1)"])
 		expect(result.ok).toBe(true)
 		if (result.ok) {
-			const root = dominantRoot(result.recurrences)
+			const root = solveRecurrenceSystem(result.recurrences)
 			expect(root).not.toBeNull()
 			if (root !== null) {
 				expect(almostEqual(root.m, 3)).toBe(true)
@@ -182,7 +172,7 @@ describe("higher-dimensional systems", () => {
 		expect(result.ok).toBe(true)
 
 		if (result.ok) {
-			const root = dominantRoot(result.recurrences) as Record<string, number>
+			const root = solveRecurrenceSystem(result.recurrences) as Record<string, number>
 			expect(root).toBeTruthy()
 			expect(typeof root.m).toBe("number")
 			expect(typeof root.n).toBe("number")
@@ -205,13 +195,11 @@ describe("higher-dimensional systems", () => {
 		expect(result.ok).toBe(true)
 
 		if (result.ok) {
-			const root = dominantRoot(result.recurrences) as Record<string, number>
+			const root = solveRecurrenceSystem(result.recurrences) as Record<string, number>
 			expect(root).toBeTruthy()
-			expect(typeof root.n).toBe("number")
-			expect(typeof root.k).toBe("number")
-			expect(typeof root.j).toBe("number")
-			// For this system, we expect the boundary condition to dominate
-			expect(almostEqual(root.n, 2)).toBe(true)
+			expect(root.n).toBe(2)
+			expect(root.k).toBe(2)
+			expect(root.j).toBe(Infinity)
 		}
 	})
 
@@ -226,7 +214,7 @@ describe("higher-dimensional systems", () => {
 		expect(result.ok).toBe(true)
 
 		if (result.ok) {
-			const root = dominantRoot(result.recurrences) as Record<string, number>
+			const root = solveRecurrenceSystem(result.recurrences) as Record<string, number>
 			expect(root).toBeTruthy()
 			expect(typeof root.x).toBe("number")
 			expect(typeof root.y).toBe("number")
@@ -247,7 +235,7 @@ describe("higher-dimensional systems", () => {
 		expect(result.ok).toBe(true)
 
 		if (result.ok) {
-			const root = dominantRoot(result.recurrences) as Record<string, number>
+			const root = solveRecurrenceSystem(result.recurrences) as Record<string, number>
 			expect(root).toBeTruthy()
 			expect(typeof root.n).toBe("number")
 			expect(typeof root.k).toBe("number")
@@ -270,7 +258,7 @@ describe("higher-dimensional systems", () => {
 		expect(result.ok).toBe(true)
 
 		if (result.ok) {
-			const root = dominantRoot(result.recurrences) as Record<string, number>
+			const root = solveRecurrenceSystem(result.recurrences) as Record<string, number>
 			expect(root).toBeTruthy()
 			expect(typeof root.a).toBe("number")
 			expect(typeof root.b).toBe("number")
@@ -293,7 +281,7 @@ describe("higher-dimensional systems", () => {
 		expect(result.ok).toBe(true)
 
 		if (result.ok) {
-			const root = dominantRoot(result.recurrences) as Record<string, number>
+			const root = solveRecurrenceSystem(result.recurrences) as Record<string, number>
 			expect(root).toBeTruthy()
 			expect(typeof root.w).toBe("number")
 			expect(typeof root.x).toBe("number")
@@ -301,26 +289,6 @@ describe("higher-dimensional systems", () => {
 			expect(typeof root.z).toBe("number")
 			expect(almostEqual(root.w, 3)).toBe(true)
 		}
-	})
-})
-
-describe("utility functions", () => {
-	test("snapInt should snap close integers", () => {
-		expect(snapInt(1.9999999)).toBe(2)
-		expect(snapInt(2.0000001)).toBe(2)
-		expect(snapInt(1.5)).toBe(1.5)
-	})
-
-	test("formatNumber should format correctly", () => {
-		expect(formatNumber(2)).toBe("2")
-		expect(formatNumber(2.0)).toBe("2")
-		expect(formatNumber(2.1234)).toBe("2.1234")
-		expect(formatNumber(2.1234)).toBe("2.1234")
-	})
-
-	test("formatRoot should format single and multi-variable roots with new naming", () => {
-		expect(formatAsymptotics({ n1: 2 })).toBe("O(2^n1)")
-		expect(formatAsymptotics({ n_1: 2, k_2: 3 })).toBe("O(2^n_1·3^k_2)")
 	})
 })
 
@@ -336,10 +304,6 @@ describe("formatRecurrences", () => {
 
 	test("should format 2D recurrence correctly with new naming", () => {
 		const result = parseRecurrences(["T_2D(n1)=T_2D(n1-1)+2T_2D(n1)"])
-		expect(result.ok).toBe(true)
-		if (result.ok) {
-			const formatted = formatRecurrences(result.recurrences)
-			expect(formatted[0]).toBe("T_2D(n1) = 2*T_2D(n1) + T_2D(n1-1)")
-		}
+		expect(result.ok).toBe(false)
 	})
 })

@@ -1,12 +1,8 @@
 <script lang="ts">
-	import {
-		parseRecurrences,
-		dominantRoot,
-		type Recurrence,
-		type Root
-	} from "$lib/recurrence-solver"
 	import { browser } from "$app/environment"
 	import RecurrenceCard from "./RecurrenceCard.svelte"
+	import type { Root } from "$lib/root-finding"
+	import { parseRecurrences, solveRecurrenceSystem, type Recurrence } from "$lib/recurrence-solver"
 
 	// --- State setup ---
 	let S = $state<{ text: string; log: [Recurrence, Root][] }>({
@@ -74,7 +70,7 @@
 		const last = S.log.at(-1)
 		if (last && JSON.stringify(last[0]) === JSON.stringify(p.recurrences)) return
 
-		const x = dominantRoot(p.recurrences)
+		const x = solveRecurrenceSystem(p.recurrences)
 		if (x) S.log.push([p.recurrences, x])
 	}
 
@@ -91,7 +87,7 @@
 	}
 
 	let parsed = $derived(parseRecurrences(S.text.split(/\r?\n/).filter(Boolean)))
-	let x = $derived(parsed.ok ? dominantRoot(parsed.recurrences) : undefined)
+	let x = $derived(parsed.ok ? solveRecurrenceSystem(parsed.recurrences) : undefined)
 </script>
 
 <div class="mx-auto max-w-4xl p-6">
