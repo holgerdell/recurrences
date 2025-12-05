@@ -1,312 +1,190 @@
 <script lang="ts">
-	const initial = "T(n) = 2 T(n-1)"
-	const initial_p = parseRecurrence(initial)
-	const initial_x = initial_p.ok && dominantRoot(initial_p.recurrence)
-	const initial_log: [Recurrence, number][] =
-		initial_p.ok && initial_x ? [[initial_p.recurrence, initial_x]] : []
-	let S = $state({ text: initial, log: initial_log })
+	import {
+		parseRecurrences,
+		dominantRoot,
+		formatRecurrences,
+		formatRoot,
+		type Recurrence,
+		type Root
+	} from "$lib/recurrence-solver"
 
-	type Term = {
-		coef: number
-		func: string // e.g. "T"
-		vars: string[] // e.g. ["n", "k"]
-		offsets: Record<string, number> // e.g. { n: 1, k: 0 }
-	}
+	// --- State setup ---
+	let S = $state<{ text: string; log: [Recurrence, Root][] }>({
+		text: "",
+		log: []
+	})
 
-	type Recurrence = {
-		func: string // "T"
-		vars: string[] // ["n"] or ["n", "k"]
-		terms: Term[]
-	}
+	// --- Example systems ---
+	const examples = [
+		{
+			title: "1D: Fibonacci Sequence",
+			equations: ["F(n)=F(n-1)+F(n-2)"]
+		},
+		{
+			title: "2D: Triangular System",
+			equations: ["T(n,k)=T(n-1,k)+T(n,k-1)", "T(n,0)=2*T(n-1,0)"]
+		}
+	]
 
-	type ParseResult = { ok: true; recurrence: Recurrence } | { ok: false; error: string }
-
-	function add() {
-		const p = parseRecurrence(S.text)
+	// --- Actions ---
+	function add(event: Event) {
+		event.preventDefault() // Prevent default form submission
+		const lines = S.text.split(/\r?\n/).filter(Boolean)
+		const p = parseRecurrences(lines)
 		if (!p.ok) return
+
 		const last = S.log.at(-1)
-		if (last && JSON.stringify(last[0]) === JSON.stringify(p.recurrence)) return
-		const x = dominantRoot(p.recurrence)
-		if (x) S.log.push([p.recurrence, x])
+		if (last && JSON.stringify(last[0]) === JSON.stringify(p.recurrences)) return
+
+		const x = dominantRoot(p.recurrences)
+		if (x) S.log.push([p.recurrences, x])
 	}
 
-	function formatNumber(x: number): string {
-		if (!Number.isFinite(x)) return String(x)
-		// Round up at 4 decimals
-		const roundedUp = Math.ceil(x * 1e4) / 1e4
-		// Convert to string, remove trailing zeros and dot
-		return roundedUp.toFixed(4).replace(/\.?0+$/, "")
+	function loadExample(equations: string[]) {
+		S.text = equations.join("\n")
 	}
 
-	export function parseRecurrence(expr: string): ParseResult {
-		if (typeof expr !== "string" || expr.trim() === "") {
-			return { ok: false, error: "Input must be a non-empty string" }
-		}
-
-		expr = expr.replace(/\s+/g, "")
-
-		const parts = expr.split("=")
-		if (parts.length !== 2) {
-			return { ok: false, error: "Expression must contain exactly one '='" }
-		}
-
-		const [lhs, rhs] = parts
-
-		// Allow only letters and underscores for function and variable names
-		const lhsMatch = /^([A-Za-z_]+)\(([^)]*)\)$/.exec(lhs)
-		if (!lhsMatch) {
-			return {
-				ok: false,
-				error: "Left-hand side must be like f(n) or R(n,k)"
-			}
-		}
-
-		const func = lhsMatch[1]
-		const vars = lhsMatch[2]
-			.split(",")
-			.map((v) => v.trim())
-			.filter(Boolean)
-
-		if (vars.length === 0) {
-			return { ok: false, error: "No variables found in function definition" }
-		}
-
-		if (vars.some((v) => !/^[A-Za-z_]+$/.test(v))) {
-			return {
-				ok: false,
-				error: "Variables must contain only letters or underscores"
-			}
-		}
-
-		// Split RHS on '+', trimming and ignoring empty parts
-		const summands = rhs
-			.split("+")
-			.map((t) => t.trim())
-			.filter(Boolean)
-		const rawTerms: Term[] = []
-
-		for (const summand of summands) {
-			const termRegex = /^(?:(-?\d+)\*?)?([A-Za-z_]+)\(([^)]*)\)$/
-			const m = termRegex.exec(summand)
-			if (!m) {
-				return { ok: false, error: `Invalid term: ${summand}` }
-			}
-
-			const coef = m[1] ? parseFloat(m[1]) : 1
-			const fnName = m[2]
-			const argsRaw = m[3].split(",").map((a) => a.trim())
-
-			if (fnName !== func) {
-				return {
-					ok: false,
-					error: `All terms must use the same function name (${func})`
-				}
-			}
-
-			if (argsRaw.length !== vars.length) {
-				return {
-					ok: false,
-					error: `Term ${summand} has ${argsRaw.length} argument(s), expected ${vars.length}`
-				}
-			}
-
-			const offsets: Record<string, number> = {}
-			for (let i = 0; i < vars.length; i++) {
-				const expectedVar = vars[i]
-				const arg = argsRaw[i]
-				const matchArg = new RegExp(`^${expectedVar}([+-]\\d+)?$`).exec(arg)
-
-				if (!matchArg) {
-					return {
-						ok: false,
-						error: `Invalid argument '${arg}' in term '${summand}'`
-					}
-				}
-
-				const offset = matchArg[1] ? parseInt(matchArg[1], 10) : 0
-				offsets[expectedVar] = -offset
-			}
-
-			rawTerms.push({ coef, func, vars, offsets })
-		}
-
-		// Combine identical terms
-		const combinedMap = new Map<string, number>()
-		for (const term of rawTerms) {
-			const key = vars.map((v) => term.offsets[v] ?? 0).join(",")
-			combinedMap.set(key, (combinedMap.get(key) ?? 0) + term.coef)
-		}
-
-		// Convert back to Term[]
-		const terms: Term[] = []
-		for (const [key, coef] of combinedMap) {
-			if (Math.abs(coef) < 1e-12) continue
-			const offsets: Record<string, number> = {}
-			const values = key.split(",").map((s) => Number(s))
-			vars.forEach((v, i) => (offsets[v] = values[i]))
-			terms.push({ coef, func, vars, offsets })
-		}
-
-		// ✅ Sort by offsets (lexicographically by variables)
-		terms.sort((a, b) => {
-			for (const v of vars) {
-				const diff = (a.offsets[v] ?? 0) - (b.offsets[v] ?? 0)
-				if (diff !== 0) return diff
-			}
-			return 0
-		})
-
-		return { ok: true, recurrence: { func, vars, terms } }
+	function clearLog() {
+		S.log = []
 	}
 
-	// Converts the structured form back to a recurrence string
-	export function formatRecurrence(recurrence: Recurrence): string {
-		const { func, vars, terms } = recurrence
-
-		const lhs = `${func}(${vars.join(",")})`
-
-		const parts = terms.map(({ coef, offsets }) => {
-			let coefStr = ""
-
-			if (coef !== 1) coefStr = coef.toString() + "*"
-
-			const args = vars
-				.map((v) => {
-					const off = offsets[v] ?? 0
-					if (off === 0) return v
-					if (off > 0) return `${v}-${off}`
-					return `${v}+${-off}`
-				})
-				.join(",")
-
-			return `${coefStr}${func}(${args})`
-		})
-
-		return `${lhs} = ${parts.join(" + ")}`
-	}
-	/**
-	 * Compute the dominant real root x > 0 of the characteristic polynomial
-	 * associated with a single‑variable recurrence relation
-	 * T(n) = Σ coef * T(n - offset)
-	 */
-	export function dominantRoot(recurrence: Recurrence): number | null {
-		const terms = recurrence.terms
-		if (recurrence.vars.length !== 1) return null
-
-		const n = recurrence.vars[0]
-		if (terms.length === 0) return null
-
-		// single‑term shortcut: T(n) = c * T(n - k)
-		if (terms.length === 1) {
-			const { coef, offsets } = terms[0]
-			const offset = offsets[n]
-			// Degenerate case: T(n) = c * T(n)
-			if (offset === 0) return null
-			// Normal first‑order recurrence
-			if (offset === 1) return coef
-		}
-
-		// Find largest offset (degree)
-		const degree = Math.max(...terms.map((t) => t.offsets[n]))
-
-		// Degenerate: all offsets are 0 → self‑referential nonsense
-		if (degree === 0) return null
-
-		// Build polynomial coefficients: x^degree - Σ coef * x^(degree - offset)
-		const coeffs = Array(degree + 1).fill(0)
-		coeffs[0] = 1 // x^degree term
-		for (const { coef, offsets } of terms) {
-			const offset = offsets[n]
-			if (offset <= degree) {
-				coeffs[offset] -= coef
-			}
-		}
-
-		// If all coefficients effectively cancel out → degenerate equation
-		const allZero = coeffs.every((c) => Math.abs(c) < 1e-14)
-		if (allZero) return null
-
-		// Polynomial evaluation
-		function f(x: number): number {
-			let val = 0
-			for (let i = 0; i <= degree; i++) {
-				val = val * x + coeffs[i]
-			}
-			return val
-		}
-
-		// Search for a positive real root (dominant root)
-		let lo = 0.0001
-		let hi = Math.max(2, ...terms.map((t) => Math.abs(t.coef))) * 2
-		let flo = f(lo)
-		let fhi = f(hi)
-
-		// Expand hi until sign change
-		while (flo * fhi > 0 && hi < 1e6) {
-			lo = hi
-			hi *= 2
-			fhi = f(hi)
-		}
-
-		if (flo * fhi > 0) {
-			// No positive root found
-			return null
-		}
-
-		// Binary search for root
-		for (let i = 0; i < 100; i++) {
-			const mid = 0.5 * (lo + hi)
-			const fm = f(mid)
-			if (Math.abs(fm) < 1e-14) return Number(mid.toFixed(12))
-			if (flo * fm < 0) {
-				hi = mid
-				fhi = fm
-			} else {
-				lo = mid
-				flo = fm
-			}
-		}
-
-		const root = 0.5 * (lo + hi)
-		return root
+	function deleteResult(index: number) {
+		S.log = S.log.filter((_, i) => i !== index)
 	}
 
-	let parsed = $derived(parseRecurrence(S.text))
-	let x = $derived(parsed.ok ? dominantRoot(parsed.recurrence) : undefined)
+	let parsed = $derived(parseRecurrences(S.text.split(/\r?\n/).filter(Boolean)))
+	let x = $derived(parsed.ok ? dominantRoot(parsed.recurrences) : undefined)
 </script>
 
-<h1 class="font-bold text-2xl mb-12">Recurrence relation solver</h1>
-<p>Write a 1-dimensional recurrence relation:</p>
-<div class="flex gap-4 items-center">
-	<form onsubmit={add}>
-		<!-- svelte-ignore a11y_autofocus -->
-		<input
-			autofocus
-			type="text"
-			bind:value={S.text}
-			onsubmit={() => add()}
-			class="m-2 p-1 ring-1 bg-green-100"
-		/>
+<div class="mx-auto max-w-4xl p-6">
+	<h1 class="mb-8 text-3xl font-bold text-gray-800">Recurrence Relation Solver</h1>
+
+	<!-- Examples Section -->
+	<div class="mb-8">
+		<h2 class="mb-4 text-lg font-medium text-slate-600">Examples</h2>
+		<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+			{#each examples as example}
+				<div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+					<h3 class="mb-2 font-medium text-slate-700">{example.title}</h3>
+					<div class="mb-3 space-y-0">
+						{#each example.equations as equation}
+							<code class="block bg-slate-100 px-2 py-2 text-sm text-slate-600">
+								{equation}
+							</code>
+						{/each}
+					</div>
+					<button
+						onclick={() => loadExample(example.equations)}
+						class="rounded bg-slate-600 px-3 py-1 text-sm text-white transition-colors hover:bg-slate-700"
+					>
+						Load Example
+					</button>
+				</div>
+			{/each}
+		</div>
+	</div>
+
+	<!-- Input Section -->
+	<form onsubmit={add} class="mb-8">
+		<div class="flex flex-col">
+			<label for="recurrence-input" class="mb-2 font-medium text-gray-700">
+				Enter one or more recurrence relations (each on a new line):
+			</label>
+			<textarea
+				id="recurrence-input"
+				bind:value={S.text}
+				rows="4"
+				placeholder="Enter recurrence relations here..."
+				class="rounded-lg border border-gray-300 p-3 font-mono transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+			></textarea>
+		</div>
+		<button
+			type="submit"
+			class="mt-3 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700"
+		>
+			Add Recurrence(s)
+		</button>
 	</form>
-	<div class="text-slate-400">
+
+	<!-- Current Parse Result -->
+	<div class="mb-8 rounded-lg border border-gray-200 bg-gray-50 p-4">
+		<h3 class="mb-3 font-medium text-gray-700">Current Input</h3>
 		{#if parsed.ok}
-			{formatRecurrence(parsed.recurrence)}
-			<span class="text-green-700 ml-8">
+			<div class="space-y-1">
+				{#each formatRecurrences(parsed.recurrences) as line}
+					<div class="font-mono text-sm text-gray-600">{line}</div>
+				{/each}
 				{#if x}
-					{formatNumber(x)}^{parsed.recurrence.vars[0]}
+					<div
+						class="mt-3 rounded border border-green-300 bg-green-100 p-2 font-medium text-green-800"
+					>
+						Asymptotics: {formatRoot(x, parsed.recurrences[0]?.vars)}
+					</div>
 				{/if}
-			</span>
+			</div>
+		{:else if S.text.trim()}
+			<div class="font-medium text-red-600">Error: {parsed.error}</div>
 		{:else}
-			Error: {parsed.error}
+			<div class="text-gray-400 italic">No input provided</div>
+		{/if}
+	</div>
+
+	<!-- Stored Results -->
+	<div class="mb-8">
+		<div class="mb-4 flex items-center justify-between">
+			<h2 class="text-xl font-semibold text-gray-800">Stored Results</h2>
+			{#if S.log.length > 0}
+				<button
+					onclick={clearLog}
+					class="rounded bg-red-600 px-3 py-1 text-sm text-white transition-colors hover:bg-red-700"
+				>
+					Clear All
+				</button>
+			{/if}
+		</div>
+
+		{#if S.log.length === 0}
+			<div class="py-8 text-center text-gray-400 italic">
+				No stored recurrences yet. Add some above!
+			</div>
+		{:else}
+			<div class="space-y-4">
+				{#each S.log as [recurrences, root], index}
+					<div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+						<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+							<!-- Recurrence Equations -->
+							<div class="flex-1">
+								<div class="mb-2 flex items-center justify-between">
+									<h4 class="font-medium text-gray-700">System #{index + 1}</h4>
+									<button
+										onclick={() => deleteResult(index)}
+										class="rounded bg-red-500 px-2 py-1 text-xs text-white transition-colors hover:bg-red-600"
+									>
+										Delete
+									</button>
+								</div>
+								<div class="space-y-1">
+									{#each formatRecurrences(recurrences) as line}
+										<div class="rounded bg-gray-50 px-2 py-1 font-mono text-sm text-gray-600">
+											{line}
+										</div>
+									{/each}
+								</div>
+							</div>
+
+							<!-- Asymptotics -->
+							<div class="lg:w-64 lg:text-right">
+								<div class="mb-1 text-sm text-gray-500">Asymptotics</div>
+								<div
+									class="rounded border border-green-200 bg-green-50 px-3 py-2 font-mono text-lg font-semibold text-green-700"
+								>
+									{formatRoot(root, recurrences[0]?.vars)}
+								</div>
+							</div>
+						</div>
+					</div>
+				{/each}
+			</div>
 		{/if}
 	</div>
 </div>
-Press enter to add the recurrence relation to the list below.
-
-<h1 class="font-bold text-lg mt-12 mb-4">Stored recurrences</h1>
-{#each S.log as row}
-	<div>
-		<div class="text-green-700 w-20 text-right inline-block mr-4">{formatNumber(row[1])}^n</div>
-		{formatRecurrence(row[0])}
-	</div>
-{/each}

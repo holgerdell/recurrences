@@ -8,8 +8,8 @@
 	type Link = { href: string; text: string; exact?: boolean }
 
 	const links: Link[] = [
-		{ href: "/", text: "1D-Recurrences", exact: true },
-		{ href: "/multi", text: "2D-Recurrences", exact: true }
+		{ href: "/", text: "Recurrence relation solver", exact: true }
+		// { href: "/multi", text: "2D-Recurrences", exact: true }
 	]
 
 	const isActive = (href: string, exact: boolean | undefined, pathname: string) =>
@@ -20,13 +20,13 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-<div class="w-dvw h-dvh">
-	<div class="mx-auto w-full max-w-2xl h-full bg-slate-100">
+<div class="h-dvh w-dvw">
+	<div class="mx-auto min-h-full w-full max-w-2xl bg-slate-100">
 		<header class="flex flex-row flex-wrap gap-8 bg-white">
 			{#each links as { href, text, exact }}
 				<a
 					{href}
-					class="p-4 aria-current:bg-slate-100 not-aria-current:shadow aria-current:underline hover:bg-blue-200 bg-black/10"
+					class="bg-black/10 p-4 not-aria-current:shadow hover:bg-blue-200! aria-current:bg-slate-100 aria-current:underline"
 					aria-current={isActive(href, exact, page.url.pathname)}
 				>
 					{text}
