@@ -1,6 +1,10 @@
 <script lang="ts">
-	import { formatRecurrences, type Recurrence } from "$lib/recurrence-solver"
-	import { type Root, formatAsymptotics } from "$lib/root-finding"
+	import {
+		formatRecurrences,
+		recurrencesToPolynomialSystem,
+		type Recurrence
+	} from "$lib/recurrence-solver"
+	import { type Root, formatAsymptotics, formatCharacteristicPolynomials } from "$lib/root-finding"
 
 	interface Props {
 		title: string
@@ -83,6 +87,19 @@
 						<div>{line}</div>
 					{/each}
 				</div>
+
+				{#if kind === "current"}
+					<div class="mt-3">
+						<div class="mb-1 text-sm text-slate-500">Characteristic polynomial</div>
+						<div
+							class="space-y-2 rounded bg-slate-50 p-2 font-mono text-sm text-slate-600 ring-1 ring-slate-200"
+						>
+							{#each formatCharacteristicPolynomials(recurrencesToPolynomialSystem(recurrences)) as poly (poly)}
+								<div>{poly}</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
 			{/if}
 		</div>
 

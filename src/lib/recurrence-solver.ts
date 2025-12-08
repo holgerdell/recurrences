@@ -45,22 +45,31 @@ export const IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
 //   Utility functions (from previous version)
 // ======================================================
 
+/**
+ * Snap a numeric value to the nearest integer when within a small epsilon.
+ * Useful to normalize values that are essentially integers due to rounding.
+ * @param val Value to snap
+ * @param eps Maximum distance from an integer to allow snapping
+ * @returns Snapped value if close enough, otherwise the original value
+ */
 export function snapIntVal(val: number, eps = 1e-6): number {
 	if (!Number.isFinite(val)) return val
 	const i = Math.round(val)
 	return Math.abs(val - i) < eps ? i : val
 }
 
-// export function formatNumber(x: number): string {
-// 	if (!Number.isFinite(x)) return String(x)
-// 	const roundedUp = Math.ceil(x * 1e4) / 1e4
-// 	return roundedUp.toFixed(4).replace(/\.?0+$/, "")
-// }
-
 // ======================================================
 //   Parser
 // ======================================================
 
+/**
+ * Parse one or more recurrence relations into an internal representation.
+ * Enforces a single function name and consistent arity across all lines.
+ * Supports positive and negative offsets (e.g., n-2, n+1) and numeric fixed arguments.
+ * Returns a structured error when the input is invalid.
+ * @param lines Source lines containing recurrence equations
+ * @returns Result with parsed recurrences or an error message
+ */
 export function parseRecurrences(lines: string[]): ParseResult {
 	const recurrences: Recurrence = []
 	let globalFunc: string | null = null
@@ -123,8 +132,27 @@ export function parseRecurrences(lines: string[]): ParseResult {
 			}
 		}
 
-		const summands = rhs
-			.split("+")
+		// depth-aware split on '+', ignoring '+' inside parentheses
+		const splitRhs = (s: string): string[] => {
+			const out: string[] = []
+			let depth = 0
+			let buf = ""
+			for (let i = 0; i < s.length; i++) {
+				const ch = s[i]
+				if (ch === "(") depth++
+				else if (ch === ")") depth = Math.max(0, depth - 1)
+				else if (ch === "+" && depth === 0) {
+					if (buf) out.push(buf)
+					buf = ""
+					continue
+				}
+				buf += ch
+			}
+			if (buf) out.push(buf)
+			return out
+		}
+
+		const summands = splitRhs(rhs)
 			.map((t) => t.trim())
 			.filter(Boolean)
 		const rawTerms: Term[] = []
@@ -168,7 +196,7 @@ export function parseRecurrences(lines: string[]): ParseResult {
 					const matchArg = new RegExp(`^${v}([+-]\\d+)?$`).exec(arg)
 					if (!matchArg) return { ok: false, error: `Invalid arg '${arg}'` }
 					const offset = matchArg[1] ? parseInt(matchArg[1], 10) : 0
-					offsets[v] = -offset
+					offsets[v] = offset
 					varIndex++
 				}
 
@@ -218,6 +246,12 @@ export function parseRecurrences(lines: string[]): ParseResult {
 //   Formatter (used for pretty-printing back out)
 // ======================================================
 
+/**
+ * Pretty-print a parsed recurrence system back into readable equations.
+ * Reconstructs offsets using +/- notation and combines terms with coefficients.
+ * @param recurrences Parsed recurrence system
+ * @returns List of formatted equation strings
+ */
 export function formatRecurrences(recurrences: Recurrence): string[] {
 	return recurrences.map(({ func, vars, terms, fixedArgs }) => {
 		const lhsArgs = fixedArgs?.length ? fixedArgs.map(String).join(",") : vars.join(",")
@@ -232,8 +266,8 @@ export function formatRecurrences(recurrences: Recurrence): string[] {
 				if (typeof arg === "number") return String(arg)
 				const off = term.offsets[arg] ?? 0
 				if (off === 0) return arg
-				if (off > 0) return `${arg}-${off}`
-				return `${arg}+${-off}`
+				if (off < 0) return `${arg}${off}`
+				return `${arg}+${off}`
 			})
 			return `${coefStr}${func}(${args.join(",")})`
 		})
@@ -242,20 +276,22 @@ export function formatRecurrences(recurrences: Recurrence): string[] {
 	})
 }
 
-// ======================================================
-//   Conversion: Recurrence → Characteristic Polynomials
-// ======================================================
-
+/**
+ * Convert a single term-based recurrence into its characteristic polynomial.
+ * Uses argument deltas as monomial exponents and builds 1 − Σ(...) = 0.
+ * @param rec Single recurrence to convert
+ * @returns Polynomial representing the characteristic equation
+ */
 function recurrenceToPolynomial(rec: TermBasedRecurrence): Polynomial {
 	const terms: PolynomialTerm[] = []
-	// Build characteristic polynomial: 1 - Σ(coef * ∏(x_i^(-offset_i))) = 0
+	// Build characteristic polynomial: 1 - Σ(coef * ∏(x_i^(delta_i))) = 0
 	terms.push({ coefficient: 1, monomial: {} })
 	for (const term of rec.terms) {
 		if (term.type !== "function") continue
 		const monomial: Monomial = {}
 		for (const v of rec.vars) {
-			const offset = term.offsets[v] ?? 0
-			if (offset !== 0) monomial[v] = -offset
+			const delta = term.offsets[v] ?? 0
+			if (delta !== 0) monomial[v] = delta
 		}
 		terms.push({ coefficient: -term.coef, monomial })
 	}
@@ -263,9 +299,12 @@ function recurrenceToPolynomial(rec: TermBasedRecurrence): Polynomial {
 }
 
 /**
- * Convert a Recurrence system into a PolynomialSystem (characteristic equations).
+ * Convert a recurrence system into a polynomial system.
+ * Aggregates variables and characteristic polynomials for solving.
+ * @param recurrences Parsed recurrence system
+ * @returns Polynomial system ready for dominant-root solving
  */
-function recurrencesToPolynomialSystem(recurrences: Recurrence): PolynomialSystem {
+export function recurrencesToPolynomialSystem(recurrences: Recurrence): PolynomialSystem {
 	const polynomials: Polynomial[] = []
 	const varSet = new Set<string>()
 	for (const rec of recurrences) {
@@ -279,6 +318,12 @@ function recurrencesToPolynomialSystem(recurrences: Recurrence): PolynomialSyste
 //   Solver wrapper
 // ======================================================
 
+/**
+ * Compute the dominant roots for a parsed recurrence system.
+ * Delegates to the polynomial system solver to obtain growth rates.
+ * @param recurrences Parsed recurrence system
+ * @returns Map of variable names to dominant roots, or null when unsolved
+ */
 export function solveRecurrenceSystem(recurrences: Recurrence): Root | null {
 	const system = recurrencesToPolynomialSystem(recurrences)
 	const roots = dominantRoot(system)
@@ -286,7 +331,10 @@ export function solveRecurrenceSystem(recurrences: Recurrence): Root | null {
 }
 
 /**
- * Convenience parser + solver wrapper.
+ * Parse and solve recurrences from raw strings and format the asymptotics.
+ * Useful as a convenience wrapper for end-to-end usage.
+ * @param lines Source lines containing recurrence equations
+ * @returns Asymptotic big-O string or an error message
  */
 export function solveRecurrencesFromStrings(lines: string[]): string {
 	const parsed = parseRecurrences(lines)

@@ -95,8 +95,11 @@ describe("Polynomial evaluation", () => {
 describe("dominantRoot solver", () => {
 	test("should return unity roots for an empty system (O(1))", () => {
 		const sys: PolynomialSystem = { polynomials: [], variables: ["n", "m"] }
-		const root = dominantRoot(sys)!
-		expect(root).toEqual({ n: 1, m: 1 })
+		const root = dominantRoot(sys)
+		expect(root).not.toBe(null)
+		if (root !== null) {
+			expect(root).toEqual({ n: 1, m: 1 })
+		}
 	})
 
 	test("should return unity roots for all-constant polynomials", () => {
@@ -109,8 +112,11 @@ describe("dominantRoot solver", () => {
 				}
 			]
 		}
-		const root = dominantRoot(sys)!
-		expect(root.n).toBe(1)
+		const root = dominantRoot(sys)
+		expect(root).not.toBe(null)
+		if (root !== null) {
+			expect(root.n).toBe(1)
+		}
 	})
 
 	test("should correctly find a single 1D root (1 - 2x^-1 = 0  =>  x = 2)", () => {
@@ -126,8 +132,11 @@ describe("dominantRoot solver", () => {
 				}
 			]
 		}
-		const root = dominantRoot(sys)!
-		expect(root.x).toBe(2)
+		const root = dominantRoot(sys)
+		expect(root).not.toBe(null)
+		if (root !== null) {
+			expect(root.x).toBe(2)
+		}
 	})
 
 	test("should find the golden ratio in a Fibonacci-like 1D polynomial", () => {
@@ -141,8 +150,11 @@ describe("dominantRoot solver", () => {
 			]
 		}
 		const sys: PolynomialSystem = { variables: ["x"], polynomials: [poly] }
-		const root = dominantRoot(sys)!
-		expect(almostEqual(root.x, 1.61803398875)).toBe(true)
+		const root = dominantRoot(sys)
+		expect(root).not.toBe(null)
+		if (root !== null) {
+			expect(almostEqual(root.x, 1.61803398875)).toBe(true)
+		}
 	})
 
 	test("should solve a basic 2D symmetric system: 1 - x^-1 - y^-1 = 0 → x = y = 2", () => {
@@ -155,9 +167,12 @@ describe("dominantRoot solver", () => {
 			]
 		}
 		const sys: PolynomialSystem = { variables: ["x", "y"], polynomials: [poly] }
-		const root = dominantRoot(sys)!
-		expect(root.x).toBe(2)
-		expect(root.y).toBe(2)
+		const root = dominantRoot(sys)
+		expect(root).not.toBe(null)
+		if (root !== null) {
+			expect(root.x).toBe(2)
+			expect(root.y).toBe(2)
+		}
 	})
 
 	test("should solve a higher-dimensional system progressively using known roots", () => {
@@ -184,9 +199,12 @@ describe("dominantRoot solver", () => {
 			variables: ["n", "k"],
 			polynomials: polys
 		}
-		const root = dominantRoot(sys)!
-		expect(root.n).toBe(2)
-		expect(root.k).toBe(2)
+		const root = dominantRoot(sys)
+		expect(root).not.toBe(null)
+		if (root !== null) {
+			expect(root.n).toBe(2)
+			expect(root.k).toBe(2)
+		}
 	})
 
 	test("should return Infinity for monotonic non-crossing case (unbounded dimension)", () => {
@@ -221,10 +239,13 @@ describe("dominantRoot solver", () => {
 			]
 		}
 
-		const root = dominantRoot(polys)!
-		expect(root.x).toBe(2)
-		expect(root.y).toBe(2)
-		expect(root.z).toBe(Infinity)
+		const root = dominantRoot(polys)
+		expect(root).not.toBe(null)
+		if (root !== null) {
+			expect(root.x).toBe(2)
+			expect(root.y).toBe(2)
+			expect(root.z).toBe(Infinity)
+		}
 	})
 })
 
@@ -264,10 +285,13 @@ test("should correctly solve an asymmetric 3D system with distinct roots", () =>
 	]
 
 	const sys: PolynomialSystem = { variables: ["x", "y", "z"], polynomials: polys }
-	const root = dominantRoot(sys)!
-	expect(root.x).toBe(2)
-	expect(root.y).toBe(6)
-	expect(almostEqual(root.z, 2.8235294117)).toBe(true)
+	const root = dominantRoot(sys)
+	expect(root).not.toBe(null)
+	if (root !== null) {
+		expect(root.x).toBe(2)
+		expect(root.y).toBe(6)
+		expect(almostEqual(root.z, 2.8235294117)).toBe(true)
+	}
 })
 
 test("should solve a 3D system with mixed coefficients creating non-equal finite roots", () => {
@@ -301,10 +325,13 @@ test("should solve a 3D system with mixed coefficients creating non-equal finite
 		}
 	]
 	const sys: PolynomialSystem = { variables: ["a", "b", "c"], polynomials: polys }
-	const root = dominantRoot(sys)!
-	expect(root.a).toBe(3)
-	expect(root.b).toBe(3)
-	expect(snapInt(2 * root.c)).toBe(1)
+	const root = dominantRoot(sys)
+	expect(root).not.toBe(null)
+	if (root !== null) {
+		expect(root.a).toBe(3)
+		expect(root.b).toBe(3)
+		expect(snapInt(2 * root.c)).toBe(1)
+	}
 })
 
 test("should solve a 4D asymmetric polynomial system with all positive distinct roots", () => {

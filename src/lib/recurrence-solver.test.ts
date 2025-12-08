@@ -76,6 +76,20 @@ describe("parseRecurrences", () => {
 		const result = parseRecurrences(["T(_n)=T(_n-1)"])
 		expect(result.ok).toBe(false)
 	})
+
+	test("should parse positive and negative offsets in RHS", () => {
+		const result = parseRecurrences(["T(n)=T(n-2)+T(n+1)"])
+		expect(result.ok).toBe(true)
+		if (result.ok) {
+			const rec = result.recurrences[0]
+			const fterms = rec.terms.filter((t) => t.type === "function")
+			expect(fterms.length).toBe(2)
+			const v = rec.vars[0]
+			const offs = fterms.map((t) => (t.type === "function" ? t.offsets[v] : 0))
+			expect(offs).toContain(-2)
+			expect(offs).toContain(1)
+		}
+	})
 })
 
 describe("solveRecurrenceSystem", () => {
@@ -305,5 +319,14 @@ describe("formatRecurrences", () => {
 	test("should format 2D recurrence correctly with new naming", () => {
 		const result = parseRecurrences(["T_2D(n1)=T_2D(n1-1)+2T_2D(n1)"])
 		expect(result.ok).toBe(false)
+	})
+
+	test("should format mixed positive/negative offsets correctly", () => {
+		const result = parseRecurrences(["T(n)=T(n-2)+T(n+1)"])
+		expect(result.ok).toBe(true)
+		if (result.ok) {
+			const formatted = formatRecurrences(result.recurrences)
+			expect(formatted[0]).toBe("T(n) = T(n-2) + T(n+1)")
+		}
 	})
 })

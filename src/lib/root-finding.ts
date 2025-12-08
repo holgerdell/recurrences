@@ -63,6 +63,43 @@ export function formatAsymptotics(root: Root | null): string {
 	return "O(" + parts.join("·") + ")"
 }
 
+/**
+ * Format the characteristic polynomials of a system as readable strings, e.g. "1 - 2*x^-1 = 0".
+ * @param system Polynomial equation system
+ * @returns List of formatted polynomial strings
+ */
+export function formatCharacteristicPolynomials(system: PolynomialSystem): string[] {
+	// Build display names: x,y,z for ≤3 vars; otherwise x_1,x_2,...
+	const orig = system.variables
+	const display =
+		orig.length <= 3 ? ["x", "y", "z"].slice(0, orig.length) : orig.map((_, i) => `x_${i + 1}`)
+	const nameMap = Object.fromEntries(orig.map((v, i) => [v, display[i]]))
+
+	const toTermString = (coef: number, monomial: Monomial): string => {
+		const vars = Object.keys(monomial)
+		const monoStr =
+			vars.length === 0 ? "1" : vars.map((v) => `${nameMap[v]}^${monomial[v]}`).join("*")
+		const abs = Math.abs(coef)
+		if (vars.length === 0) {
+			return (coef >= 0 ? "" : "- ") + String(abs)
+		}
+		const coefStr = abs === 1 ? "" : `${abs}*`
+		return (coef >= 0 ? "+ " : "- ") + coefStr + monoStr
+	}
+
+	return system.polynomials.map((poly) => {
+		const body = poly.terms
+			.map((t, i) => {
+				const s = toTermString(t.coefficient, t.monomial)
+				return i === 0 ? s.replace(/^\+\s*/, "") : s
+			})
+			.join(" ")
+			.replace(/\s+/g, " ")
+			.trim()
+		return `${body} = 0`
+	})
+}
+
 // ======================================================
 //   Core Polynomial Evaluation Utilities
 // ======================================================
@@ -125,7 +162,7 @@ function findPositiveRoot(f: (x: number) => number, loInit = 0.0001, hiInit = 10
 		fhi = f(hi)
 	}
 
-	// --- NEW LOGIC: if still same sign, check for monotonic convergence ---
+	// If still same sign, check for monotonic convergence ---
 	if (flo * fhi > 0) {
 		const fLarge = f(hi * 100)
 		// If approaches zero but never crosses, treat as unbounded (Infinity root)
@@ -153,20 +190,6 @@ function findPositiveRoot(f: (x: number) => number, loInit = 0.0001, hiInit = 10
 }
 
 /**
- * Attempts to solve a 1‑variable polynomial equation for dominant (largest) positive root.
- */
-function solve1DPolynomial(poly: Polynomial): number | null {
-	if (poly.variables.length !== 1) return null
-	const v = poly.variables[0]
-
-	function f(x: number): number {
-		const vals: Root = { [v]: x }
-		return evaluatePolynomial(poly, vals)
-	}
-	return findPositiveRoot(f, 0.0001, 10)
-}
-
-/**
  * Attempts to solve a 2‑variable polynomial equation assuming symmetric behavior (x = y)
  * or by fixing one variable and solving the other.
  */
@@ -181,15 +204,17 @@ function solve2DPolynomial(poly: Polynomial): Root | null {
 
 	// symmetric x=y case
 	const sym = findPositiveRoot((x) => f(x, x), 1.01, 10)
-	if (sym !== null) return { [v1]: sym, [v2]: sym }
-
+	if (sym !== null) {
+		const s = snapInt(sym)
+		return { [v1]: s, [v2]: s }
+	}
 	// fix x and solve y
-	for (let x = 1.1; x <= 5; x += 0.1) {
+	for (let x = 1.01; x <= 5; x += 0.01) {
 		const y = findPositiveRoot((y) => f(x, y), 1.01, 10)
 		if (y !== null) return { [v1]: snapInt(x), [v2]: snapInt(y) }
 	}
 	// fix y and solve x
-	for (let y = 1.1; y <= 5; y += 0.1) {
+	for (let y = 1.01; y <= 5; y += 0.01) {
 		const x = findPositiveRoot((x) => f(x, y), 1.01, 10)
 		if (x !== null) return { [v1]: snapInt(x), [v2]: snapInt(y) }
 	}
@@ -231,29 +256,6 @@ export function dominantRoot(system: PolynomialSystem, ACCEPTABLE_ERROR = 1e-8):
 
 	for (const poly of sortedPolys) {
 		const unknowns = poly.variables.filter((v) => !(v in roots))
-		const knownVars = poly.variables.filter((v) => v in roots)
-
-		// --- Single‑variable case ---
-		if (poly.variables.length === 1 && unknowns.length === 1) {
-			const v = poly.variables[0]
-			const r = solve1DPolynomial(poly)
-			if (r === null) return null
-			roots[v] = r
-			continue
-		}
-
-		// --- Some variables known, one unknown ---
-		if (knownVars.length > 0 && unknowns.length === 1) {
-			const u = unknowns[0]
-			const f = (x: number): number => {
-				const vals: Root = { ...roots, [u]: x }
-				return evaluatePolynomial(poly, vals)
-			}
-			const val = findPositiveRoot(f, 0.0001, 10)
-			if (val === null) return null
-			roots[u] = val
-			continue
-		}
 
 		// --- Unconstrained 2D case ---
 		if (poly.variables.length === 2 && unknowns.length === 2) {
@@ -282,11 +284,6 @@ export function dominantRoot(system: PolynomialSystem, ACCEPTABLE_ERROR = 1e-8):
 	// --- Final overall verification ---
 	const systemErr = systemResidual(system, roots)
 	if (systemErr > ACCEPTABLE_ERROR) return null
-
-	// If solver somehow found no roots but we have variables, default to 1 as well
-	if (!Object.keys(roots).length && system.variables.length) {
-		system.variables.forEach((v) => (roots[v] = 1))
-	}
 
 	return Object.keys(roots).length ? roots : null
 }
