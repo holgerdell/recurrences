@@ -3,8 +3,13 @@ import {
 	parseRecurrences,
 	formatRecurrences,
 	IDENTIFIER_PATTERN,
-	solveRecurrenceSystem
+	solveRecurrenceSystem,
+	isWeightedCausal,
+	type WeightedCausalDebug
 } from "./recurrence-solver"
+import { initGLPK } from "$lib/glpk-instance"
+
+await initGLPK()
 
 const almostEqual = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) < eps
 
@@ -93,11 +98,11 @@ describe("parseRecurrences", () => {
 })
 
 describe("solveRecurrenceSystem", () => {
-	test("geometric growth with new naming", () => {
+	test("geometric growth with new naming", async () => {
 		const result = parseRecurrences(["T_geom(n1)=2*T_geom(n1-1)"])
 		expect(result.ok).toBe(true)
 		if (result.ok) {
-			const root = solveRecurrenceSystem(result.recurrences)
+			const root = await solveRecurrenceSystem(result.recurrences)
 			expect(root).not.toBeNull()
 			if (root !== null) {
 				expect(almostEqual(Object.values(root)[0], 2)).toBe(true)
@@ -105,11 +110,11 @@ describe("solveRecurrenceSystem", () => {
 		}
 	})
 
-	test("Fibonacci sequence with new naming", () => {
+	test("Fibonacci sequence with new naming", async () => {
 		const result = parseRecurrences(["Fib_seq(n_val)=Fib_seq(n_val-1)+Fib_seq(n_val-2)"])
 		expect(result.ok).toBe(true)
 		if (result.ok) {
-			const root = solveRecurrenceSystem(result.recurrences)
+			const root = await solveRecurrenceSystem(result.recurrences)
 			expect(root).not.toBeNull()
 			if (root !== null) {
 				expect(almostEqual(Object.values(root)[0], 1.61803398875)).toBe(true)
@@ -117,11 +122,11 @@ describe("solveRecurrenceSystem", () => {
 		}
 	})
 
-	test("Tribonacci sequence with new naming", () => {
+	test("Tribonacci sequence with new naming", async () => {
 		const result = parseRecurrences(["T3(n_var)=T3(n_var-1)+T3(n_var-2)+T3(n_var-3)"])
 		expect(result.ok).toBe(true)
 		if (result.ok) {
-			const root = solveRecurrenceSystem(result.recurrences)
+			const root = await solveRecurrenceSystem(result.recurrences)
 			expect(root).not.toBeNull()
 			if (root !== null) {
 				expect(almostEqual(Object.values(root)[0], 1.83928675521)).toBe(true)
@@ -129,54 +134,51 @@ describe("solveRecurrenceSystem", () => {
 		}
 	})
 
-	test("2D triangular system with new naming", () => {
+	test("2D triangular system with new naming", async () => {
 		const result = parseRecurrences([
 			"T2D(n1,k2)=T2D(n1-1,k2)+T2D(n1,k2-1)",
 			"T2D(n1,0)=2*T2D(n1-1,0)"
 		])
 		expect(result.ok).toBe(true)
 		if (result.ok) {
-			const root = solveRecurrenceSystem(result.recurrences) as Record<string, number>
+			const root = (await solveRecurrenceSystem(result.recurrences)) as Record<string, number>
 			expect(root).toBeTruthy()
 			expect(almostEqual(root.n1, 2)).toBe(true)
 			expect(almostEqual(root.k2, 2)).toBe(true)
 		}
 	})
-
-	test("should return null for degenerate case", () => {
-		const result = parseRecurrences(["T_deg(n1)=T_deg(n1)"])
-		expect(result.ok).toBe(false)
-	})
 })
 
 describe("higher-dimensional systems", () => {
-	test("Asymmetric 2D recurrence with boundary condition", () => {
+	test("Asymmetric 2D recurrence with boundary condition", async () => {
 		const result = parseRecurrences(["F(m,0) = 4*F(m-1,0)", "F(m,n) = 2*F(m-1,n) + F(m,n-1)"])
 		expect(result.ok).toBe(true)
 		if (result.ok) {
-			const root = solveRecurrenceSystem(result.recurrences)
+			const root = await solveRecurrenceSystem(result.recurrences)
 			expect(root).not.toBeNull()
-			if (root !== null) {
+			expect(root).not.toBe("divergent")
+			if (root !== null && root !== "divergent") {
 				expect(almostEqual(root.m, 4)).toBe(true)
 				expect(almostEqual(root.n, 2)).toBe(true)
 			}
 		}
 	})
 
-	test("Symmetric 2D recurrence without boundary condition", () => {
+	test("Symmetric 2D recurrence without boundary condition", async () => {
 		const result = parseRecurrences(["F(m,n) = 2*F(m-1,n) + F(m,n-1)"])
 		expect(result.ok).toBe(true)
 		if (result.ok) {
-			const root = solveRecurrenceSystem(result.recurrences)
+			const root = await solveRecurrenceSystem(result.recurrences)
 			expect(root).not.toBeNull()
-			if (root !== null) {
+			expect(root).not.toBe("divergent")
+			if (root !== null && root !== "divergent") {
 				expect(almostEqual(root.m, 3)).toBe(true)
 				expect(almostEqual(root.n, 3)).toBe(true)
 			}
 		}
 	})
 
-	test("2D Delannoy-type system (lattice paths with diagonal moves)", () => {
+	test("2D Delannoy-type system (lattice paths with diagonal moves)", async () => {
 		// This represents counting lattice paths where you can move
 		// right, up, or diagonally: (1,0), (0,1), or (1,1)
 		// D(m,n) counts paths from (0,0) to (m,n)
@@ -186,7 +188,7 @@ describe("higher-dimensional systems", () => {
 		expect(result.ok).toBe(true)
 
 		if (result.ok) {
-			const root = solveRecurrenceSystem(result.recurrences) as Record<string, number>
+			const root = (await solveRecurrenceSystem(result.recurrences)) as Record<string, number>
 			expect(root).toBeTruthy()
 			expect(typeof root.m).toBe("number")
 			expect(typeof root.n).toBe("number")
@@ -197,7 +199,7 @@ describe("higher-dimensional systems", () => {
 		}
 	})
 
-	test("3D Delannoy-type system (lattice paths in 3D)", () => {
+	test("3D Delannoy-type system (lattice paths in 3D)", async () => {
 		// This represents counting lattice paths in 3D space where you can move
 		// in three directions: (1,0,0), (0,1,0), or (0,0,1)
 		// T(n,k,j) counts paths from (0,0,0) to (n,k,j)
@@ -209,7 +211,7 @@ describe("higher-dimensional systems", () => {
 		expect(result.ok).toBe(true)
 
 		if (result.ok) {
-			const root = solveRecurrenceSystem(result.recurrences) as Record<string, number>
+			const root = (await solveRecurrenceSystem(result.recurrences)) as Record<string, number>
 			expect(root).toBeTruthy()
 			expect(root.n).toBe(2)
 			expect(root.k).toBe(2)
@@ -217,7 +219,7 @@ describe("higher-dimensional systems", () => {
 		}
 	})
 
-	test("3D Trinomial-type system (symmetric lattice paths)", () => {
+	test("3D Trinomial-type system (symmetric lattice paths)", async () => {
 		// Represents a 3D generalization where each dimension can contribute
 		// symmetrically, similar to trinomial coefficients
 		const result = parseRecurrences([
@@ -228,7 +230,7 @@ describe("higher-dimensional systems", () => {
 		expect(result.ok).toBe(true)
 
 		if (result.ok) {
-			const root = solveRecurrenceSystem(result.recurrences) as Record<string, number>
+			const root = (await solveRecurrenceSystem(result.recurrences)) as Record<string, number>
 			expect(root).toBeTruthy()
 			expect(typeof root.x).toBe("number")
 			expect(typeof root.y).toBe("number")
@@ -237,7 +239,7 @@ describe("higher-dimensional systems", () => {
 		}
 	})
 
-	test("4D hypercubic lattice paths", () => {
+	test("4D hypercubic lattice paths", async () => {
 		// Represents counting paths in 4D hypercubic lattice
 		// Moving in four orthogonal directions: (1,0,0,0), (0,1,0,0), (0,0,1,0), (0,0,0,1)
 		const result = parseRecurrences([
@@ -249,7 +251,7 @@ describe("higher-dimensional systems", () => {
 		expect(result.ok).toBe(true)
 
 		if (result.ok) {
-			const root = solveRecurrenceSystem(result.recurrences) as Record<string, number>
+			const root = (await solveRecurrenceSystem(result.recurrences)) as Record<string, number>
 			expect(root).toBeTruthy()
 			expect(typeof root.n).toBe("number")
 			expect(typeof root.k).toBe("number")
@@ -260,7 +262,7 @@ describe("higher-dimensional systems", () => {
 		}
 	})
 
-	test("4D Fibonacci-type system with geometric growth", () => {
+	test("4D Fibonacci-type system with geometric growth", async () => {
 		// A 4D system where each dimension has Fibonacci-like recurrence
 		// but with exponential boundary conditions
 		const result = parseRecurrences([
@@ -272,7 +274,7 @@ describe("higher-dimensional systems", () => {
 		expect(result.ok).toBe(true)
 
 		if (result.ok) {
-			const root = solveRecurrenceSystem(result.recurrences) as Record<string, number>
+			const root = (await solveRecurrenceSystem(result.recurrences)) as Record<string, number>
 			expect(root).toBeTruthy()
 			expect(typeof root.a).toBe("number")
 			expect(typeof root.b).toBe("number")
@@ -283,7 +285,7 @@ describe("higher-dimensional systems", () => {
 		}
 	})
 
-	test("4D Catalan-type system", () => {
+	test("4D Catalan-type system", async () => {
 		// Inspired by multidimensional Catalan numbers
 		// Each step can be in any of 4 directions with restriction pattern
 		const result = parseRecurrences([
@@ -295,7 +297,7 @@ describe("higher-dimensional systems", () => {
 		expect(result.ok).toBe(true)
 
 		if (result.ok) {
-			const root = solveRecurrenceSystem(result.recurrences) as Record<string, number>
+			const root = (await solveRecurrenceSystem(result.recurrences)) as Record<string, number>
 			expect(root).toBeTruthy()
 			expect(typeof root.w).toBe("number")
 			expect(typeof root.x).toBe("number")
@@ -318,7 +320,7 @@ describe("formatRecurrences", () => {
 
 	test("should format 2D recurrence correctly with new naming", () => {
 		const result = parseRecurrences(["T_2D(n1)=T_2D(n1-1)+2T_2D(n1)"])
-		expect(result.ok).toBe(false)
+		expect(result.ok).toBe(true)
 	})
 
 	test("should format mixed positive/negative shifts correctly", () => {
@@ -329,4 +331,69 @@ describe("formatRecurrences", () => {
 			expect(formatted[0]).toBe("T(n) = T(n-2) + T(n+1)")
 		}
 	})
+})
+
+const printDebug = (name: string, dbg: WeightedCausalDebug) => {
+	console.group(`Result for ${name}`)
+	console.log(`Feasible: ${dbg.feasible}`)
+	console.log(`Status: ${dbg.statusName}`)
+	console.log(`Weights:`, dbg.weights)
+	dbg.dotProducts?.forEach((d) =>
+		console.log(`  shift [${d.shift.join(", ")}] · w = ${d.dot.toFixed(6)}`)
+	)
+	console.groupEnd()
+}
+
+describe("isWeightedCausal (LP-based, diagnostic mode)", () => {
+	//
+	// 🚫 Divergent systems
+	//
+	const divergent = [
+		"T(n)=T(n)", // self ref
+		"T(n)=T(n+1)", // forward
+		"F(n)=F(n-1)+F(n+1)", // mixed
+		"D(n,m)=D(n,m+1)", // forward in m
+		"D(n,m)=D(n,m+1)+D(n,m-1)" // symmetric — not downhill
+	]
+
+	for (const expr of divergent) {
+		test(`should mark ${expr} as non-causal (divergent)`, async () => {
+			const result = parseRecurrences([expr])
+			expect(result.ok).toBe(true)
+			if (!result.ok) return
+
+			const dbg = await isWeightedCausal(result.recurrences)
+			expect(dbg.feasible).toBe(false)
+			if (dbg.feasible) printDebug(expr, dbg)
+		})
+	}
+
+	//
+	// ✅ Causal (non-divergent) systems
+	//
+	const causal = [
+		"T(n)=T(n-1)+T(n-2)", // Fibonacci
+		"T(n,m)=2*T(n-1,m)+T(n,m-1)", // monotone 2D
+		"D(n,m)=D(n-1,m)+D(n,m-1)+D(n-1,m-1)", // Delannoy
+		"S(i,j)=S(i-2,j+1)", // mixed but consistent
+		"A(n,m,k)=A(n-1,m,k)+A(n,m-1,k)+A(n,m,k-1)", // 3D monotone
+		"T(n,m)=T(n-2,m+1)+T(n-3,m)", // mixed but downhill
+		"R(x,y,z)=R(x-2,y,z+1)+R(x-1,y-3,z)", // asymmetric downhill
+		"H(i,j)=H(i-1,j-2)", // all negative
+		"S(n)=S(n-1)+S(n-3)", // long negative steps
+		"Q(n,m,p)=Q(n-1,m+1,p)+Q(n,m-1,p+1)", // consistent hierarchy
+		"A(x,y,z)=A(x+1,y-2,z+3)" // mixed signs in one term
+	]
+
+	for (const expr of causal) {
+		test(`should mark ${expr} as causal (non-divergent)`, async () => {
+			const result = parseRecurrences([expr])
+			expect(result.ok).toBe(true)
+			if (!result.ok) return
+
+			const dbg = await isWeightedCausal(result.recurrences)
+			expect(dbg.feasible).toBe(true)
+			if (!dbg.feasible) printDebug(expr, dbg)
+		})
+	}
 })

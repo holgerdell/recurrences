@@ -9,7 +9,7 @@
 	interface Props {
 		title: string
 		recurrences?: Recurrence
-		root?: Root | null
+		root?: Root | null | "divergent"
 		description?: string
 		error?: string
 		emptyMessage?: string

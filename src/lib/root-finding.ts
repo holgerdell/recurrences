@@ -54,8 +54,9 @@ export function formatNumber(x: number): string {
 	return roundedUp.toFixed(4).replace(/\.?0+$/, "")
 }
 
-export function formatAsymptotics(root: Root | null): string {
+export function formatAsymptotics(root: Root | null | "divergent"): string {
 	if (!root) return ""
+	if (root === "divergent") return "divergent"
 	const parts: string[] = []
 	for (const [v, val] of Object.entries(root)) {
 		parts.push(`${formatNumber(val)}^${v}`)

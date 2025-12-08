@@ -3,6 +3,8 @@
 // Recurrence parser + formatter + link to polynomial solver
 // ======================================================
 
+import { getGLPK } from "$lib/glpk-instance" // or the exact path to that build
+import type { GLPK } from "glpk.js"
 import {
 	type Monomial,
 	type Polynomial,
@@ -224,16 +226,6 @@ export function parseRecurrences(lines: string[]): ParseResult {
 			terms.push({ type: "function", coef, func, vars, shifts })
 		}
 
-		// check degenerate F(...) = F(...)
-		const hasSelf = terms.some(
-			(t) => t.type === "function" && vars.every((v) => (t.shifts[v] ?? 0) === 0)
-		)
-		if (hasSelf)
-			return {
-				ok: false,
-				error: `Invalid recurrence: function defined in terms of itself without shifts in '${line}'`
-			}
-
 		recurrences.push({ func, vars, terms, fixedArgs })
 	}
 
@@ -318,16 +310,181 @@ export function recurrencesToPolynomialSystem(recurrences: Recurrence): Polynomi
 //   Solver wrapper
 // ======================================================
 
+export interface WeightedCausalDebug {
+	feasible: boolean
+	status: number
+	statusName: string
+	weights: Record<string, number>
+	shifts: number[][]
+	dotProducts: Array<{ shift: number[]; dot: number }>
+}
+
+/**
+ * Weighted‑causality check using a linear‑program feasibility system.
+ *
+ * LP formulation:
+ *   minimize 0
+ *   subject to:
+ *     Σ_j shift_i[j] * w_j ≤ -ε   for all recursive shifts i
+ *     Σ_j w_j = 1                 (normalization)
+ *     w_j ≥ ε_min                 (strictly positive weights)
+ *
+ * Feasible → causal (non‑divergent)
+ * Infeasible → divergent
+ */
+export async function isWeightedCausal(
+	R: Recurrence,
+	epsilon = 1e-3,
+	epsilonMin = 1e-3
+): Promise<WeightedCausalDebug> {
+	const glpk: GLPK = getGLPK()
+
+	// 1️⃣ Collect variable names
+	const vars: string[] = []
+	for (const eq of R) {
+		for (const v of eq.vars) if (!vars.includes(v)) vars.push(v)
+	}
+	if (vars.length === 0) {
+		return {
+			feasible: true,
+			status: glpk.GLP_FEAS,
+			statusName: "no-variables",
+			weights: {},
+			shifts: [],
+			dotProducts: []
+		}
+	}
+
+	// 2️⃣ Gather all same‑function shift vectors
+	const shifts: number[][] = []
+	for (const eq of R) {
+		for (const term of eq.terms) {
+			if (term.type === "constant") continue
+			if (term.func !== eq.func) continue
+			const vec = vars.map((v) => term.shifts?.[v] ?? 0)
+
+			// Self‑reference (zero shift) ⇒ non‑causal
+			if (vec.every((x) => x === 0)) {
+				return {
+					feasible: false,
+					status: glpk.GLP_INFEAS,
+					statusName: "self-ref",
+					weights: {},
+					shifts: [vec],
+					dotProducts: []
+				}
+			}
+			shifts.push(vec)
+		}
+	}
+
+	if (shifts.length === 0) {
+		return {
+			feasible: true,
+			status: glpk.GLP_FEAS,
+			statusName: "no-recursive-terms",
+			weights: {},
+			shifts,
+			dotProducts: []
+		}
+	}
+
+	// 3️⃣ Build LP model (minimize 0)
+	const model = {
+		name: "weighted_causal",
+		objective: {
+			direction: glpk.GLP_MIN,
+			name: "obj",
+			vars: vars.map((v) => ({ name: v, coef: 0 }))
+		},
+		subjectTo: [] as {
+			name: string
+			vars: { name: string; coef: number }[]
+			bnds: { type: number; ub: number; lb: number }
+		}[],
+		bounds: [] as { name: string; type: number; lb: number; ub: number }[]
+	}
+
+	// positivity: w_j ≥ ε_min
+	for (const v of vars) {
+		model.bounds.push({
+			name: v,
+			type: glpk.GLP_LO,
+			lb: epsilonMin,
+			ub: 1e6
+		})
+	}
+
+	// each shift: Σ s_j * w_j ≤ -ε
+	shifts.forEach((s, i) => {
+		model.subjectTo.push({
+			name: `shift_${i}`,
+			vars: vars.map((v, j) => ({ name: v, coef: s[j] })),
+			bnds: { type: glpk.GLP_UP, ub: -epsilon, lb: -1e6 }
+		})
+	})
+
+	// normalization: Σ w_j = 1
+	model.subjectTo.push({
+		name: "normalize",
+		vars: vars.map((v) => ({ name: v, coef: 1 })),
+		bnds: { type: glpk.GLP_FX, ub: 1, lb: 1 }
+	})
+
+	// 4️⃣ Solve LP
+	const result = await Promise.resolve(glpk.solve(model, { msglev: glpk.GLP_MSG_OFF }))
+	const status = result.result.status
+
+	const statusNames: Record<number, string> = {
+		[glpk.GLP_OPT]: "GLP_OPT (optimal)",
+		[glpk.GLP_FEAS]: "GLP_FEAS (feasible)",
+		[glpk.GLP_INFEAS]: "GLP_INFEAS (infeasible)",
+		[glpk.GLP_NOFEAS]: "GLP_NOFEAS (no feasible solution)",
+		[glpk.GLP_UNDEF]: "GLP_UNDEF (undefined)"
+	}
+
+	const feasible = status === glpk.GLP_OPT || status === glpk.GLP_FEAS
+
+	// 5️⃣ Extract weights
+	const weights: Record<string, number> = {}
+	if (result.result.vars) {
+		for (const [name, val] of Object.entries(result.result.vars)) {
+			weights[name] = val
+		}
+	}
+
+	// 6️⃣ Compute dot products (diagnostic only)
+	const dotProducts = shifts.map((s) => ({
+		shift: s,
+		dot: vars.reduce((sum, v, i) => sum + s[i] * (weights[v] ?? 0), 0)
+	}))
+
+	// 7️⃣ Return diagnostic result
+	return {
+		feasible,
+		status,
+		statusName: statusNames[status] ?? `code ${status}`,
+		weights,
+		shifts,
+		dotProducts
+	}
+}
+
 /**
  * Compute the dominant roots for a parsed recurrence system.
  * Delegates to the polynomial system solver to obtain growth rates.
  * @param recurrences Parsed recurrence system
  * @returns Map of variable names to dominant roots, or null when unsolved
  */
-export function solveRecurrenceSystem(recurrences: Recurrence): Root | null {
-	const system = recurrencesToPolynomialSystem(recurrences)
-	const roots = dominantRoot(system)
-	return roots
+export async function solveRecurrenceSystem(
+	recurrences: Recurrence
+): Promise<Root | "divergent" | null> {
+	return isWeightedCausal(recurrences).then((x) => {
+		if (!x.feasible) return "divergent"
+		const system = recurrencesToPolynomialSystem(recurrences)
+		const roots = dominantRoot(system)
+		return roots
+	})
 }
 
 /**
@@ -336,9 +493,11 @@ export function solveRecurrenceSystem(recurrences: Recurrence): Root | null {
  * @param lines Source lines containing recurrence equations
  * @returns Asymptotic big-O string or an error message
  */
-export function solveRecurrencesFromStrings(lines: string[]): string {
+export async function solveRecurrencesFromStrings(lines: string[]): Promise<string> {
 	const parsed = parseRecurrences(lines)
-	if (!parsed.ok) return `Error: ${parsed.error}`
-	const roots = solveRecurrenceSystem(parsed.recurrences)
-	return formatAsymptotics(roots)
+	if (!parsed.ok) return Promise.resolve(`Error: ${parsed.error}`)
+	return solveRecurrenceSystem(parsed.recurrences).then((roots) => {
+		if (roots === "divergent") return "divergent"
+		return formatAsymptotics(roots)
+	})
 }
