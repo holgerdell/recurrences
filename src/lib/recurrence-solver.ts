@@ -23,7 +23,7 @@ export type Term =
 			coef: number
 			func: string
 			vars: string[]
-			offsets: Record<string, number>
+			shifts: Record<string, number>
 	  }
 	| { type: "constant"; coef: number }
 
@@ -65,7 +65,7 @@ export function snapIntVal(val: number, eps = 1e-6): number {
 /**
  * Parse one or more recurrence relations into an internal representation.
  * Enforces a single function name and consistent arity across all lines.
- * Supports positive and negative offsets (e.g., n-2, n+1) and numeric fixed arguments.
+ * Supports positive and negative shifts (e.g., n-2, n+1) and numeric fixed arguments.
  * Returns a structured error when the input is invalid.
  * @param lines Source lines containing recurrence equations
  * @returns Result with parsed recurrences or an error message
@@ -187,7 +187,7 @@ export function parseRecurrences(lines: string[]): ParseResult {
 						error: `Term '${summand}' has ${argsRaw.length} args, expected ${globalArgCount}`
 					}
 
-				const offsets: Record<string, number> = {}
+				const shifts: Record<string, number> = {}
 				let varIndex = 0
 				for (const arg of argsRaw) {
 					if (/^-?\d+$/.test(arg)) continue
@@ -195,43 +195,43 @@ export function parseRecurrences(lines: string[]): ParseResult {
 					if (!v) return { ok: false, error: `Unexpected arg '${arg}'` }
 					const matchArg = new RegExp(`^${v}([+-]\\d+)?$`).exec(arg)
 					if (!matchArg) return { ok: false, error: `Invalid arg '${arg}'` }
-					const offset = matchArg[1] ? parseInt(matchArg[1], 10) : 0
-					offsets[v] = offset
+					const shift = matchArg[1] ? parseInt(matchArg[1], 10) : 0
+					shifts[v] = shift
 					varIndex++
 				}
 
-				rawTerms.push({ type: "function", coef, func, vars, offsets })
+				rawTerms.push({ type: "function", coef, func, vars, shifts })
 			}
 		}
 
-		// combine same-offset terms
+		// combine same-shift terms
 		const terms: Term[] = []
 		const functionMap = new Map<string, number>()
 		let constantSum = 0
 		for (const term of rawTerms) {
 			if (term.type === "constant") constantSum += term.coef
 			else {
-				const key = vars.map((v) => term.offsets[v] ?? 0).join(",")
+				const key = vars.map((v) => term.shifts[v] ?? 0).join(",")
 				functionMap.set(key, (functionMap.get(key) ?? 0) + term.coef)
 			}
 		}
 		if (Math.abs(constantSum) > 1e-12) terms.push({ type: "constant", coef: constantSum })
 		for (const [key, coef] of functionMap) {
 			if (Math.abs(coef) < 1e-12) continue
-			const offsets: Record<string, number> = {}
+			const shifts: Record<string, number> = {}
 			const values = key.split(",").map(Number)
-			vars.forEach((v, i) => (offsets[v] = values[i]))
-			terms.push({ type: "function", coef, func, vars, offsets })
+			vars.forEach((v, i) => (shifts[v] = values[i]))
+			terms.push({ type: "function", coef, func, vars, shifts })
 		}
 
 		// check degenerate F(...) = F(...)
 		const hasSelf = terms.some(
-			(t) => t.type === "function" && vars.every((v) => (t.offsets[v] ?? 0) === 0)
+			(t) => t.type === "function" && vars.every((v) => (t.shifts[v] ?? 0) === 0)
 		)
 		if (hasSelf)
 			return {
 				ok: false,
-				error: `Invalid recurrence: function defined in terms of itself without offsets in '${line}'`
+				error: `Invalid recurrence: function defined in terms of itself without shifts in '${line}'`
 			}
 
 		recurrences.push({ func, vars, terms, fixedArgs })
@@ -248,7 +248,7 @@ export function parseRecurrences(lines: string[]): ParseResult {
 
 /**
  * Pretty-print a parsed recurrence system back into readable equations.
- * Reconstructs offsets using +/- notation and combines terms with coefficients.
+ * Reconstructs shifts using +/- notation and combines terms with coefficients.
  * @param recurrences Parsed recurrence system
  * @returns List of formatted equation strings
  */
@@ -264,7 +264,7 @@ export function formatRecurrences(recurrences: Recurrence): string[] {
 			else if (term.coef === -1) coefStr = "-"
 			const args = (fixedArgs ?? vars).map((arg) => {
 				if (typeof arg === "number") return String(arg)
-				const off = term.offsets[arg] ?? 0
+				const off = term.shifts[arg] ?? 0
 				if (off === 0) return arg
 				if (off < 0) return `${arg}${off}`
 				return `${arg}+${off}`
@@ -290,7 +290,7 @@ function recurrenceToPolynomial(rec: TermBasedRecurrence): Polynomial {
 		if (term.type !== "function") continue
 		const monomial: Monomial = {}
 		for (const v of rec.vars) {
-			const delta = term.offsets[v] ?? 0
+			const delta = term.shifts[v] ?? 0
 			if (delta !== 0) monomial[v] = delta
 		}
 		terms.push({ coefficient: -term.coef, monomial })
