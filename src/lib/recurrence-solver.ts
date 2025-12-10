@@ -72,7 +72,8 @@ export function snapIntVal(val: number, eps = 1e-6): number {
  * @param lines Source lines containing recurrence equations
  * @returns Result with parsed recurrences or an error message
  */
-export function parseRecurrences(lines: string[]): ParseResult {
+export function parseRecurrences(lines: string | string[]): ParseResult {
+	if (!Array.isArray(lines)) lines = lines.split("\n")
 	const recurrences: Recurrence = []
 	let globalFunc: string | null = null
 	let globalArgCount: number | null = null
@@ -242,30 +243,32 @@ export function parseRecurrences(lines: string[]): ParseResult {
  * Pretty-print a parsed recurrence system back into readable equations.
  * Reconstructs shifts using +/- notation and combines terms with coefficients.
  * @param recurrences Parsed recurrence system
- * @returns List of formatted equation strings
+ * @returns Formatted equation string
  */
-export function formatRecurrences(recurrences: Recurrence): string[] {
-	return recurrences.map(({ func, vars, terms, fixedArgs }) => {
-		const lhsArgs = fixedArgs?.length ? fixedArgs.map(String).join(",") : vars.join(",")
-		const lhs = `${func}(${lhsArgs})`
+export function formatRecurrences(recurrences: Recurrence): string {
+	return recurrences
+		.map(({ func, vars, terms, fixedArgs }) => {
+			const lhsArgs = fixedArgs?.length ? fixedArgs.map(String).join(",") : vars.join(",")
+			const lhs = `${func}(${lhsArgs})`
 
-		const rhsParts = terms.map((term) => {
-			if (term.type === "constant") return String(term.coef)
-			let coefStr = ""
-			if (term.coef !== 1 && term.coef !== -1) coefStr = term.coef.toString() + "*"
-			else if (term.coef === -1) coefStr = "-"
-			const args = (fixedArgs ?? vars).map((arg) => {
-				if (typeof arg === "number") return String(arg)
-				const off = term.shifts[arg] ?? 0
-				if (off === 0) return arg
-				if (off < 0) return `${arg}${off}`
-				return `${arg}+${off}`
+			const rhsParts = terms.map((term) => {
+				if (term.type === "constant") return String(term.coef)
+				let coefStr = ""
+				if (term.coef !== 1 && term.coef !== -1) coefStr = term.coef.toString() + "*"
+				else if (term.coef === -1) coefStr = "-"
+				const args = (fixedArgs ?? vars).map((arg) => {
+					if (typeof arg === "number") return String(arg)
+					const off = term.shifts[arg] ?? 0
+					if (off === 0) return arg
+					if (off < 0) return `${arg}${off}`
+					return `${arg}+${off}`
+				})
+				return `${coefStr}${func}(${args.join(",")})`
 			})
-			return `${coefStr}${func}(${args.join(",")})`
+			const rhs = rhsParts.join(" + ").replace(/\+\s*-/g, "- ")
+			return `${lhs} = ${rhs}`
 		})
-		const rhs = rhsParts.join(" + ").replace(/\+\s*-/g, "- ")
-		return `${lhs} = ${rhs}`
-	})
+		.join("\n")
 }
 
 /**
@@ -493,7 +496,7 @@ export async function solveRecurrenceSystem(
  * @param lines Source lines containing recurrence equations
  * @returns Asymptotic big-O string or an error message
  */
-export async function solveRecurrencesFromStrings(lines: string[]): Promise<string> {
+export async function solveRecurrencesFromStrings(lines: string): Promise<string> {
 	const parsed = parseRecurrences(lines)
 	if (!parsed.ok) return Promise.resolve(`Error: ${parsed.error}`)
 	return solveRecurrenceSystem(parsed.recurrences).then((roots) => {

@@ -387,7 +387,7 @@ describe("isWeightedCausal (LP-based, diagnostic mode)", () => {
 
 	for (const expr of causal) {
 		test(`should mark ${expr} as causal (non-divergent)`, async () => {
-			const result = parseRecurrences([expr])
+			const result = parseRecurrences(expr)
 			expect(result.ok).toBe(true)
 			if (!result.ok) return
 

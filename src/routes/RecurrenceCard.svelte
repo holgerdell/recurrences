@@ -1,14 +1,10 @@
 <script lang="ts">
-	import {
-		formatRecurrences,
-		recurrencesToPolynomialSystem,
-		type Recurrence
-	} from "$lib/recurrence-solver"
+	import { parseRecurrences, recurrencesToPolynomialSystem } from "$lib/recurrence-solver"
 	import { type Root, formatAsymptotics, formatCharacteristicPolynomials } from "$lib/root-finding"
 
 	interface Props {
 		title: string
-		recurrences?: Recurrence
+		recurrences?: string
 		root?: Root | null | "divergent"
 		description?: string
 		error?: string
@@ -31,6 +27,8 @@
 		onSelect,
 		kind = "current"
 	}: Props = $props()
+
+	const parsed = $derived(parseRecurrences(recurrences ?? ""))
 </script>
 
 <div
@@ -83,18 +81,18 @@
 				<div
 					class="space-y-3 rounded bg-slate-50 p-2 font-mono text-sm text-slate-600 ring-1 ring-slate-200"
 				>
-					{#each formatRecurrences(recurrences) as line (line)}
+					{#each recurrences.split("\n") as line (line)}
 						<div>{line}</div>
 					{/each}
 				</div>
 
-				{#if kind === "current"}
+				{#if kind === "current" && parsed.ok}
 					<div class="mt-3">
 						<div class="mb-1 text-sm text-slate-500">Characteristic polynomial</div>
 						<div
 							class="space-y-2 rounded bg-slate-50 p-2 font-mono text-sm text-slate-600 ring-1 ring-slate-200"
 						>
-							{#each formatCharacteristicPolynomials(recurrencesToPolynomialSystem(recurrences)) as poly (poly)}
+							{#each formatCharacteristicPolynomials(recurrencesToPolynomialSystem(parsed.recurrences)) as poly (poly)}
 								<div>{poly}</div>
 							{/each}
 						</div>

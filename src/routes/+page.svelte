@@ -8,39 +8,45 @@
 		solveRecurrenceSystem,
 		type Recurrence
 	} from "$lib/recurrence-solver"
-	import { replaceState } from "$app/navigation"
-	import { page } from "$app/state"
+	import { goto } from "$app/navigation"
 
 	const RECURRENCE_LOG_KEY = "recurrence-log-v3"
 
 	// --- State setup ---
 	let S = $state<{
 		text: string
-		log: Recurrence[]
+		log: string[]
 		logRoots: Record<string, Root | null | "divergent">
 	}>({
 		text: "",
-		log: loadFromStorage(),
+		log: loadFromStorage(RECURRENCE_LOG_KEY),
 		logRoots: {}
 	})
 
-	function recomputeLogRoots() {
-		S.log.forEach((r) =>
-			solveRecurrenceSystem(r).then((sol) => {
-				S.logRoots[formatRecurrences(r).join("\n")] = sol
-			})
-		)
-	}
-
 	if (browser) {
-		recomputeLogRoots()
-	}
+		recomputeLogRoots(S.log)
+		localStorage.removeItem("recurrence-log")
+		localStorage.removeItem("recurrence-log-v2")
 
-	// --- URL initialization ---
-	if (browser) {
+		// --- URL initialization ---
 		const params = new URLSearchParams(location.search)
 		const q = params.get("q")
 		if (q) S.text = decodeURIComponent(q)
+		window.addEventListener("popstate", () => {
+			const params = new URLSearchParams(location.search)
+			const q = params.get("q")
+			S.text = q ? decodeURIComponent(q) : ""
+		})
+	}
+
+	function recomputeLogRoots(list: string[]) {
+		for (const s of list) {
+			const r = parseRecurrences(s)
+			if (!r.ok) continue
+			solveRecurrenceSystem(r.recurrences).then((sol) => {
+				S.logRoots[s] = sol
+			})
+		}
 	}
 
 	function isListOfStrings(value: unknown): value is string[] {
@@ -48,42 +54,38 @@
 	}
 
 	// --- localStorage functions ---
-	function loadFromStorage(): Recurrence[] {
+	function loadFromStorage(key: string): string[] {
 		if (!browser) return []
-		const stored = localStorage.getItem(RECURRENCE_LOG_KEY)
+		const stored = localStorage.getItem(key)
 		if (!stored) return []
 		try {
 			const parsed = JSON.parse(stored)
 			if (isListOfStrings(parsed)) {
 				return parsed
-					.map((s) => parseRecurrences(s.split("\n")))
-					.filter((x) => x.ok)
-					.map((x) => x.recurrences)
 			} else {
-				console.warn(`⚠️ ${RECURRENCE_LOG_KEY} does not contain a valid list of strings.`)
+				console.warn(`⚠️ ${key} does not contain a valid list of strings.`)
 				return []
 			}
 		} catch (err) {
-			console.error(`❌ Failed to parse ${RECURRENCE_LOG_KEY} from localStorage:`, err)
+			console.error(`❌ Failed to parse ${key} from localStorage:`, err)
 			return []
+		}
+	}
+
+	function saveToStorage(key: string, value: string[]) {
+		if (!browser) return
+		try {
+			if (value.length === 0) localStorage.removeItem(key)
+			else localStorage.setItem(key, JSON.stringify(value))
+		} catch {
+			/* silent */
 		}
 	}
 
 	// Save to localStorage whenever log changes
 	$effect(() => {
 		if (!browser) return
-		try {
-			localStorage.removeItem("recurrence-log")
-			localStorage.removeItem("recurrence-log-v2")
-			if (S.log.length === 0) localStorage.removeItem(RECURRENCE_LOG_KEY)
-			else
-				localStorage.setItem(
-					RECURRENCE_LOG_KEY,
-					JSON.stringify(S.log.map((r) => formatRecurrences(r).join("\n")))
-				)
-		} catch {
-			/* silent */
-		}
+		saveToStorage(RECURRENCE_LOG_KEY, S.log)
 	})
 
 	// Listen for localStorage changes from other tabs
@@ -91,8 +93,8 @@
 		if (!browser) return
 		function handleStorageChange(e: StorageEvent) {
 			if (e.key === RECURRENCE_LOG_KEY) {
-				S.log = loadFromStorage()
-				recomputeLogRoots()
+				S.log = loadFromStorage(RECURRENCE_LOG_KEY)
+				recomputeLogRoots(S.log)
 			}
 		}
 		window.addEventListener("storage", handleStorageChange)
@@ -103,19 +105,8 @@
 	$effect(() => {
 		if (!browser) return
 		const q = S.text.trim()
-		const newUrl = q ? `${location.pathname}?q=${encodeURIComponent(q)}` : location.pathname
-		if (location.search !== (q ? `?q=${encodeURIComponent(q)}` : "")) {
-			replaceState(newUrl, page.state)
-		}
+		goto(`?q=${encodeURIComponent(q)}`, { replaceState: true, noScroll: true, keepFocus: true })
 	})
-
-	if (browser) {
-		window.addEventListener("popstate", () => {
-			const params = new URLSearchParams(location.search)
-			const q = params.get("q")
-			S.text = q ? decodeURIComponent(q) : ""
-		})
-	}
 
 	// --- Examples ---
 	const examples = [
@@ -130,7 +121,7 @@
 			equations: ["D(m,n)=D(m,n-1)+D(m-1,n)+D(m-1,n-1)"]
 		}
 	].map((x) => {
-		const result = parseRecurrences(x.equations)
+		const result = parseRecurrences(x.equations.join("\n"))
 		if (!result.ok) throw Error
 		return { ...x, recurrences: result.recurrences }
 	})
@@ -138,19 +129,20 @@
 	// --- Actions ---
 	function add() {
 		const lines = S.text.split(/\r?\n/).filter(Boolean)
-		const p = parseRecurrences(lines)
-		if (!p.ok) return
-		const last = S.log.at(-1)
-		if (last && JSON.stringify(last) === JSON.stringify(p.recurrences)) return
-		S.log.push(p.recurrences)
-		solveRecurrenceSystem(p.recurrences).then((sol) => {
-			S.logRoots[formatRecurrences(p.recurrences).join("\n")] = sol
-		})
 		S.text = ""
+		const clean = lines.join("\n")
+		const p = parseRecurrences(clean)
+		if (!p.ok) return
+		if (!(clean in S.logRoots)) {
+			solveRecurrenceSystem(p.recurrences).then((sol) => {
+				S.logRoots[clean] = sol
+			})
+		}
+		if (!(clean in S.log)) S.log.push(clean)
 	}
 
 	function loadRecurrence(r: Recurrence) {
-		S.text = formatRecurrences(r).join("\n")
+		S.text = formatRecurrences(r)
 	}
 
 	function clearLog() {
@@ -162,7 +154,7 @@
 		S.log = S.log.filter((_, i) => i !== index)
 	}
 
-	let parsed = $derived(parseRecurrences(S.text.split(/\r?\n/).filter(Boolean)))
+	let parsed = $derived(parseRecurrences(S.text))
 	let x = $derived(parsed.ok ? solveRecurrenceSystem(parsed.recurrences) : undefined)
 </script>
 
@@ -184,7 +176,7 @@
 		{#if S.text}
 			<RecurrenceCard
 				title="Preview"
-				recurrences={parsed.ok ? parsed.recurrences : undefined}
+				recurrences={parsed.ok ? formatRecurrences(parsed.recurrences) : undefined}
 				root={await x}
 				error={parsed.ok ? undefined : parsed.error}
 				kind="current"
@@ -224,15 +216,17 @@
 			</div>
 		{:else}
 			<div class="mb-12 space-y-4">
-				{#each S.log as recurrences, index (index)}
+				{#each S.log as s, index (index)}
 					<RecurrenceCard
 						title={`System #${index + 1}`}
-						{recurrences}
-						root={S.logRoots[formatRecurrences(recurrences).join("\n")]}
+						recurrences={s}
+						root={S.logRoots[s]}
 						showDelete={true}
 						kind="stored"
 						onDelete={() => deleteResult(index)}
-						onSelect={() => loadRecurrence(recurrences)}
+						onSelect={() => {
+							S.text = s
+						}}
 					/>
 				{/each}
 			</div>
@@ -246,7 +240,7 @@
 			{#each examples as ex, i (i)}
 				<RecurrenceCard
 					title={ex.title}
-					recurrences={ex.recurrences}
+					recurrences={formatRecurrences(ex.recurrences)}
 					root={await solveRecurrenceSystem(ex.recurrences)}
 					description={ex.description}
 					kind="example"
