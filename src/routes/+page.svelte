@@ -11,6 +11,8 @@
 	import { replaceState } from "$app/navigation"
 	import { page } from "$app/state"
 
+	const RECURRENCE_LOG_KEY = "recurrence-log-v3"
+
 	// --- State setup ---
 	let S = $state<{
 		text: string
@@ -41,15 +43,28 @@
 		if (q) S.text = decodeURIComponent(q)
 	}
 
-	const RECURRENCE_LOG_KEY = "recurrence-log-v2"
+	function isListOfStrings(value: unknown): value is string[] {
+		return Array.isArray(value) && value.every((item) => typeof item === "string")
+	}
 
 	// --- localStorage functions ---
 	function loadFromStorage(): Recurrence[] {
 		if (!browser) return []
+		const stored = localStorage.getItem(RECURRENCE_LOG_KEY)
+		if (!stored) return []
 		try {
-			const stored = localStorage.getItem(RECURRENCE_LOG_KEY)
-			return stored ? JSON.parse(stored) : []
-		} catch {
+			const parsed = JSON.parse(stored)
+			if (isListOfStrings(parsed)) {
+				return parsed
+					.map((s) => parseRecurrences(s.split("\n")))
+					.filter((x) => x.ok)
+					.map((x) => x.recurrences)
+			} else {
+				console.warn(`⚠️ ${RECURRENCE_LOG_KEY} does not contain a valid list of strings.`)
+				return []
+			}
+		} catch (err) {
+			console.error(`❌ Failed to parse ${RECURRENCE_LOG_KEY} from localStorage:`, err)
 			return []
 		}
 	}
@@ -59,8 +74,13 @@
 		if (!browser) return
 		try {
 			localStorage.removeItem("recurrence-log")
+			localStorage.removeItem("recurrence-log-v2")
 			if (S.log.length === 0) localStorage.removeItem(RECURRENCE_LOG_KEY)
-			else localStorage.setItem(RECURRENCE_LOG_KEY, JSON.stringify(S.log))
+			else
+				localStorage.setItem(
+					RECURRENCE_LOG_KEY,
+					JSON.stringify(S.log.map((r) => formatRecurrences(r).join("\n")))
+				)
 		} catch {
 			/* silent */
 		}
