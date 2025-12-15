@@ -2,7 +2,7 @@
 	import { browser } from "$app/environment"
 	import { goto } from "$app/navigation"
 
-	import RecurrenceCard from "./RecurrenceCard.svelte"
+	import RecurrenceCard from "$lib/components/RecurrenceCard.svelte"
 	import type { Root } from "$lib/root-finding"
 	import {
 		formatRecurrences,
