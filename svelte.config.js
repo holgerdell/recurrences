@@ -13,6 +13,7 @@ const config = {
 		adapter: adapter()
 	},
 	compilerOptions: {
+		runes: true,
 		experimental: {
 			async: true
 		}

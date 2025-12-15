@@ -126,7 +126,7 @@
 			<RecurrenceCard
 				title="Preview"
 				recurrences={parsed.ok ? formatRecurrences(parsed.recurrences) : undefined}
-				root={await previewPromise}
+				root={previewPromise}
 				error={parsed.ok ? undefined : parsed.error}
 				kind="current"
 				emptyMessage={S.text.trim() ? undefined : "No input provided"}
@@ -171,7 +171,7 @@
 					<RecurrenceCard
 						title={`System #${index + 1}`}
 						recurrences={s}
-						root={await computeRoot(s)}
+						root={computeRoot(s)}
 						showDelete={true}
 						kind="stored"
 						onDelete={() => deleteResult(index)}
@@ -193,7 +193,7 @@
 				<RecurrenceCard
 					title={ex.title}
 					recurrences={formatRecurrences(ex.recurrences)}
-					root={await solveRecurrenceSystem(ex.recurrences)}
+					root={solveRecurrenceSystem(ex.recurrences)}
 					description={ex.description}
 					kind="example"
 					onSelect={() => loadRecurrence(ex.recurrences)}

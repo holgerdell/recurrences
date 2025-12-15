@@ -5,7 +5,7 @@
 	interface Props {
 		title: string
 		recurrences?: string
-		root?: Root | null | "divergent"
+		root?: Promise<Root | null | "divergent">
 		description?: string
 		error?: string
 		emptyMessage?: string
@@ -108,7 +108,15 @@
 				<div
 					class="rounded border border-green-200 bg-green-50 px-3 py-2 font-mono text-lg font-semibold text-green-700"
 				>
-					{formatAsymptotics(root)}
+					{#await root}
+						<span class="text-gray-500">Computing…</span>
+					{:then r}
+						{formatAsymptotics(r)}
+					{:catch error}
+						<span class="text-red-600">
+							{error instanceof Error ? error.message : String(error)}
+						</span>
+					{/await}
 				</div>
 			</div>
 		{/if}

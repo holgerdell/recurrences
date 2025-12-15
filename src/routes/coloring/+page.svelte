@@ -471,21 +471,22 @@
 	<h1 class="text-3xl font-bold">Branching Rules for List 3‑Coloring</h1>
 
 	<p class="text-gray-700">
-		Each rule below illustrates a local structure in a list-coloring instance, its branching options, and the
-		resulting recurrence on the measures we track. After each rule you can inspect the
-		recurrence, a weighted scalar reduction (when available), and the asymptotic solution produced by
-		the recurrence solver.
+		Each rule below illustrates a local structure in a list-coloring instance, its branching
+		options, and the resulting recurrence on the measures we track. After each rule you can inspect
+		the recurrence, a weighted scalar reduction (when available), and the asymptotic solution
+		produced by the recurrence solver.
 	</p>
 
 	<div class="rounded-lg border border-gray-300 bg-gray-50 p-4 text-sm text-gray-800">
-		<div class="font-semibold uppercase tracking-wide text-gray-600">Legend</div>
+		<div class="font-semibold tracking-wide text-gray-600 uppercase">Legend</div>
 		<ul class="mt-2 list-disc space-y-1 pl-5">
 			<li>
-				<span class="font-mono">n₃</span> — number of vertices whose lists still contain three colors and whose degree is at
-				least three.
+				<span class="font-mono">n₃</span> — number of vertices whose lists still contain three colors
+				and whose degree is at least three.
 			</li>
 			<li>
-				<span class="font-mono">n₂</span> — number of vertices with two available colors and degree at least three.
+				<span class="font-mono">n₂</span> — number of vertices with two available colors and degree at
+				least three.
 			</li>
 		</ul>
 		(Neighbors of branching vertices are assumed to have degree at least three.)
