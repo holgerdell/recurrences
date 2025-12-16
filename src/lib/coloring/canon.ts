@@ -1,7 +1,7 @@
 import { SvelteMap, SvelteSet } from "svelte/reactivity"
 
 import type { Color, GraphEdge, GraphNode } from "./graph-utils"
-import { buildAdjacencyMap, buildAdjacencyMatrix } from "./graph-utils"
+import { buildNeighborsMap, buildAdjacencyMatrix } from "./graph-utils"
 
 /**
  * Canonical four-vertex situation capturing a normalized node/edge layout and its signature.
@@ -99,7 +99,7 @@ function formatColorsLiteral(colors: readonly Color[]) {
  * @returns String literal describing the node structure.
  */
 function formatNodeLiteral(node: GraphNode) {
-	return `{ id: "${node.id}", label: "${node.label}", colors: ${formatColorsLiteral(node.colors)} }`
+	return `{ id: "${node.id}", colors: ${formatColorsLiteral(node.colors)} }`
 }
 
 /**
@@ -164,13 +164,10 @@ function buildAdjacencyNodes(
 ) {
 	const labels = ["v", "a", "b", "c"] as const
 	const orderedNeighbors = permutation.map((index) => neighborColors[index])
-	const nodes: GraphNode[] = [
-		{ id: labels[0], label: labels[0], colors: [...rootColors] as readonly Color[] }
-	]
+	const nodes: GraphNode[] = [{ id: labels[0], colors: [...rootColors] as readonly Color[] }]
 	orderedNeighbors.forEach((colors, idx) => {
 		nodes.push({
 			id: labels[idx + 1],
-			label: labels[idx + 1],
 			colors: [...colors] as readonly Color[]
 		})
 	})
@@ -222,14 +219,14 @@ function isEligibleList(colors: readonly Color[]) {
  * @param rootNode - Candidate root vertex.
  * @param neighborIds - Neighbor identifiers to include in the subset.
  * @param nodeLookup - Lookup table of all graph nodes.
- * @param adjacency - Adjacency map on the full graph.
+ * @param neighbors - Adjacency map on the full graph.
  * @returns Canonical situation or null when the subset is invalid.
  */
 function canonicalizeSubset(
 	rootNode: GraphNode,
 	neighborIds: readonly string[],
 	nodeLookup: SvelteMap<string, GraphNode>,
-	adjacency: SvelteMap<string, SvelteSet<string>>
+	neighbors: Record<string, string[]>
 ): CanonicalSituation | null {
 	if (neighborIds.length !== 3) return null
 	const neighborNodes = neighborIds
@@ -245,7 +242,7 @@ function canonicalizeSubset(
 		return null
 	}
 	const nodeIds = [rootNode.id, ...neighborIds]
-	const adjacencyMatrix = buildAdjacencyMatrix(nodeIds, adjacency)
+	const adjacencyMatrix = buildAdjacencyMatrix(nodeIds, neighbors)
 	const colorStrings = [rootColors, ...neighborColors].map((colors) => colorsToKey(colors))
 	let bestSignature = ""
 	let bestPermutation = NEIGHBOR_PERMUTATIONS[0]
@@ -332,8 +329,8 @@ export function canonicalizeLocalSituations(
 	const nodeLookup = new SvelteMap(nodes.map((node) => [node.id, node] as const))
 	const rootNode = nodeLookup.get(rootId)
 	if (!rootNode || !isEligibleList(rootNode.colors)) return []
-	const adjacency = buildAdjacencyMap(nodes, edges)
-	const eligibleNeighbors = Array.from(adjacency.get(rootId) ?? []).filter((neighborId) => {
+	const neighbors = buildNeighborsMap(nodes, edges)
+	const eligibleNeighbors = Array.from(neighbors[rootId] ?? []).filter((neighborId) => {
 		const node = nodeLookup.get(neighborId)
 		return Boolean(node && isEligibleList(node.colors))
 	})
@@ -341,7 +338,7 @@ export function canonicalizeLocalSituations(
 	const seen = new SvelteSet<string>()
 	const results: CanonicalSituation[] = []
 	for (const subset of combinations(eligibleNeighbors, 3)) {
-		const canonical = canonicalizeSubset(rootNode, subset, nodeLookup, adjacency)
+		const canonical = canonicalizeSubset(rootNode, subset, nodeLookup, neighbors)
 		if (!canonical) continue
 		if (seen.has(canonical.signature)) continue
 		seen.add(canonical.signature)
@@ -373,10 +370,10 @@ export function generateAllLocalSituations() {
 					if (new SvelteSet(neighborKeys).size !== neighborKeys.length) continue
 					if (rootHasTwoColors && neighborKeyMatchesRoot(neighborNormalized, rootKey)) continue
 					const nodes: GraphNode[] = [
-						{ id: "root", label: "v", colors: rootColors },
-						{ id: "n0", label: "u₁", colors: firstNeighbor },
-						{ id: "n1", label: "u₂", colors: secondNeighbor },
-						{ id: "n2", label: "u₃", colors: thirdNeighbor }
+						{ id: "root", colors: rootColors },
+						{ id: "n0", colors: firstNeighbor },
+						{ id: "n1", colors: secondNeighbor },
+						{ id: "n2", colors: thirdNeighbor }
 					]
 					const edges: GraphEdge[] = [
 						{ from: "root", to: "n0" },

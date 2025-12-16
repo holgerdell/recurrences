@@ -188,7 +188,7 @@
 			class={`absolute flex flex-col items-center justify-center rounded-xl border-2 font-mono text-[0.8rem] text-slate-800 ${stateClass}`}
 			style={`left:${n.x * scale}px; top:${n.y * scale}px; width:${NODE_W * scale}px; height:${NODE_H * scale}px`}
 		>
-			<div class="font-semibold">{n.label}</div>
+			<div class="font-semibold">{n.id}</div>
 
 			<div class="flex gap-1 text-xs">
 				{#each n.colors as c (c)}

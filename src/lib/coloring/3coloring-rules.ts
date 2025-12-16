@@ -11,10 +11,10 @@ export const rules: BranchingRule[] = [
 		focus: ["v"],
 		before: {
 			nodes: [
-				{ id: "v", label: "v", colors: [1, 2, 3] },
-				{ id: "u1", label: "u₁", colors: [1, 2, 3] },
-				{ id: "u2", label: "u₂", colors: [1, 2, 3] },
-				{ id: "u3", label: "u₃", colors: [1, 2, 3] }
+				{ id: "v", colors: [1, 2, 3] },
+				{ id: "u1", colors: [1, 2, 3] },
+				{ id: "u2", colors: [1, 2, 3] },
+				{ id: "u3", colors: [1, 2, 3] }
 			],
 			edges: [
 				{ from: "v", to: "u1" },
@@ -35,10 +35,10 @@ export const rules: BranchingRule[] = [
 		focus: ["v"],
 		before: {
 			nodes: [
-				{ id: "v", label: "v", colors: [1, 2, 3] },
-				{ id: "u1", label: "u₁", colors: [1, 2, 3] },
-				{ id: "u2", label: "u₂", colors: [1, 2, 3] },
-				{ id: "u3", label: "u₃", colors: [1, 2, 3] }
+				{ id: "v", colors: [1, 2, 3] },
+				{ id: "u1", colors: [1, 2, 3] },
+				{ id: "u2", colors: [1, 2, 3] },
+				{ id: "u3", colors: [1, 2, 3] }
 			],
 			edges: [
 				{ from: "v", to: "u1" },
@@ -56,10 +56,10 @@ export const rules: BranchingRule[] = [
 		focus: ["v"],
 		before: {
 			nodes: [
-				{ id: "v", label: "v", colors: [1, 2] },
-				{ id: "u1", label: "u₁", colors: [1, 3] },
-				{ id: "u2", label: "u₂", colors: [1, 3] },
-				{ id: "u3", label: "u₃", colors: [2, 3] }
+				{ id: "v", colors: [1, 2] },
+				{ id: "u1", colors: [1, 3] },
+				{ id: "u2", colors: [1, 3] },
+				{ id: "u3", colors: [2, 3] }
 			],
 			edges: [
 				{ from: "v", to: "u1" },
@@ -83,10 +83,10 @@ export const rules: BranchingRule[] = [
 		focus: ["v"],
 		before: {
 			nodes: [
-				{ id: "v", label: "v", colors: [1, 2] },
-				{ id: "u1", label: "u₁", colors: [2, 3] },
-				{ id: "u2", label: "u₂", colors: [2, 3] },
-				{ id: "u3", label: "u₃", colors: [2, 3] }
+				{ id: "v", colors: [1, 2] },
+				{ id: "u1", colors: [2, 3] },
+				{ id: "u2", colors: [2, 3] },
+				{ id: "u3", colors: [2, 3] }
 			],
 			edges: [
 				{ from: "v", to: "u1" },
@@ -111,10 +111,10 @@ export const rules: BranchingRule[] = [
 		focus: ["v1", "v2"],
 		before: {
 			nodes: [
-				{ id: "v1", label: "v₁", colors: [1, 2, 3] },
-				{ id: "v2", label: "v₂", colors: [1, 2, 3] },
-				{ id: "u1", label: "u₁", colors: [1, 2, 3] },
-				{ id: "u2", label: "u₂", colors: [1, 2, 3] }
+				{ id: "v1", colors: [1, 2, 3] },
+				{ id: "v2", colors: [1, 2, 3] },
+				{ id: "u1", colors: [1, 2, 3] },
+				{ id: "u2", colors: [1, 2, 3] }
 			],
 			edges: [
 				{ from: "v1", to: "v2" },
@@ -143,10 +143,10 @@ export const rules: BranchingRule[] = [
 		focus: ["v"],
 		before: {
 			nodes: [
-				{ id: "v", label: "v", colors: [1, 2] },
-				{ id: "a", label: "a", colors: [1, 2, 3] },
-				{ id: "b", label: "b", colors: [1, 3] },
-				{ id: "c", label: "c", colors: [2, 3] }
+				{ id: "v", colors: [1, 2] },
+				{ id: "a", colors: [1, 2, 3] },
+				{ id: "b", colors: [1, 3] },
+				{ id: "c", colors: [2, 3] }
 			],
 			edges: [
 				{ from: "v", to: "a" },
@@ -164,10 +164,10 @@ export const rules: BranchingRule[] = [
 		focus: ["v"],
 		before: {
 			nodes: [
-				{ id: "v", label: "v", colors: [1, 3] },
-				{ id: "a", label: "a", colors: [1, 2, 3] },
-				{ id: "b", label: "b", colors: [1, 2] },
-				{ id: "c", label: "c", colors: [2, 3] }
+				{ id: "v", colors: [1, 3] },
+				{ id: "a", colors: [1, 2, 3] },
+				{ id: "b", colors: [1, 2] },
+				{ id: "c", colors: [2, 3] }
 			],
 			edges: [
 				{ from: "v", to: "a" },
@@ -185,10 +185,10 @@ export const rules: BranchingRule[] = [
 		focus: ["v"],
 		before: {
 			nodes: [
-				{ id: "v", label: "v", colors: [2, 3] },
-				{ id: "a", label: "a", colors: [1, 2, 3] },
-				{ id: "b", label: "b", colors: [1, 2] },
-				{ id: "c", label: "c", colors: [1, 3] }
+				{ id: "v", colors: [2, 3] },
+				{ id: "a", colors: [1, 2, 3] },
+				{ id: "b", colors: [1, 2] },
+				{ id: "c", colors: [1, 3] }
 			],
 			edges: [
 				{ from: "v", to: "a" },
@@ -206,10 +206,10 @@ export const rules: BranchingRule[] = [
 		focus: ["v"],
 		before: {
 			nodes: [
-				{ id: "v", label: "v", colors: [1, 2, 3] },
-				{ id: "a", label: "a", colors: [1, 2] },
-				{ id: "b", label: "b", colors: [1, 3] },
-				{ id: "c", label: "c", colors: [2, 3] }
+				{ id: "v", colors: [1, 2, 3] },
+				{ id: "a", colors: [1, 2] },
+				{ id: "b", colors: [1, 3] },
+				{ id: "c", colors: [2, 3] }
 			],
 			edges: [
 				{ from: "v", to: "a" },
@@ -231,10 +231,10 @@ export const rules: BranchingRule[] = [
 		focus: ["v"],
 		before: {
 			nodes: [
-				{ id: "v", label: "v", colors: [1, 2, 3] },
-				{ id: "a", label: "a", colors: [1, 2, 3] },
-				{ id: "b", label: "b", colors: [1, 2] },
-				{ id: "c", label: "c", colors: [1, 3] }
+				{ id: "v", colors: [1, 2, 3] },
+				{ id: "a", colors: [1, 2, 3] },
+				{ id: "b", colors: [1, 2] },
+				{ id: "c", colors: [1, 3] }
 			],
 			edges: [
 				{ from: "v", to: "a" },
@@ -255,10 +255,10 @@ export const rules: BranchingRule[] = [
 		focus: ["v"],
 		before: {
 			nodes: [
-				{ id: "v", label: "v", colors: [1, 2, 3] },
-				{ id: "a", label: "a", colors: [1, 2, 3] },
-				{ id: "b", label: "b", colors: [1, 2] },
-				{ id: "c", label: "c", colors: [2, 3] }
+				{ id: "v", colors: [1, 2, 3] },
+				{ id: "a", colors: [1, 2, 3] },
+				{ id: "b", colors: [1, 2] },
+				{ id: "c", colors: [2, 3] }
 			],
 			edges: [
 				{ from: "v", to: "a" },
@@ -279,10 +279,10 @@ export const rules: BranchingRule[] = [
 		focus: ["v"],
 		before: {
 			nodes: [
-				{ id: "v", label: "v", colors: [1, 2, 3] },
-				{ id: "a", label: "a", colors: [1, 2, 3] },
-				{ id: "b", label: "b", colors: [1, 3] },
-				{ id: "c", label: "c", colors: [2, 3] }
+				{ id: "v", colors: [1, 2, 3] },
+				{ id: "a", colors: [1, 2, 3] },
+				{ id: "b", colors: [1, 3] },
+				{ id: "c", colors: [2, 3] }
 			],
 			edges: [
 				{ from: "v", to: "a" },

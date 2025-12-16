@@ -269,33 +269,33 @@ function applyBranchWithDiff(
 		const adjacency = rebuildAdjacency()
 		const pair = findMergePair(adjacency)
 		if (!pair) break
-		const [aId, bId] = pair
-		const keep = nodesById.get(aId)
-		const remove = nodesById.get(bId)
-		if (!keep || !remove) continue
-		const labelPieces = [keep.label, remove.label].sort((lhs, rhs) => lhs.localeCompare(rhs))
-		const combinedLabel = labelPieces.join("")
+		const [id_a, id_b] = pair.toSorted((lhs, rhs) => lhs.localeCompare(rhs))
+		const node_a = nodesById.get(id_a)
+		const node_b = nodesById.get(id_b)
+		if (!node_a || !node_b) continue
+		const combinedID = id_a + id_b
 		const combinedRemoved = new SvelteSet([
-			...(keep.removedColors ?? []),
-			...(remove.removedColors ?? [])
+			...(node_a.removedColors ?? []),
+			...(node_b.removedColors ?? [])
 		])
 		const newDiff =
-			keep.diff === "root" || remove.diff === "root"
+			node_a.diff === "root" || node_b.diff === "root"
 				? "root"
-				: keep.diff === "changed" || remove.diff === "changed"
+				: node_a.diff === "changed" || node_b.diff === "changed"
 					? "changed"
 					: "unchanged"
-		nodesById.set(aId, {
-			...keep,
-			label: combinedLabel,
-			removedColors: combinedRemoved.size ? [...combinedRemoved] : keep.removedColors,
+		nodesById.set(combinedID, {
+			...node_a,
+			id: combinedID,
+			removedColors: combinedRemoved.size ? [...combinedRemoved] : node_a.removedColors,
 			diff: newDiff
 		})
-		nodesById.delete(bId)
+		nodesById.delete(id_a)
+		nodesById.delete(id_b)
 		workingEdges = workingEdges
 			.map((edge) => ({
-				from: edge.from === bId ? aId : edge.from,
-				to: edge.to === bId ? aId : edge.to
+				from: edge.from in [id_a, id_b] ? combinedID : edge.from,
+				to: edge.to in [id_a, id_b] ? combinedID : edge.to
 			}))
 			.filter((edge) => edge.from !== edge.to)
 	}
@@ -327,13 +327,17 @@ function applyBranchWithDiff(
  * @param focus - Root ids whose neighbors always qualify.
  * @returns Measure counting qualifying 3-color and 2-color vertices.
  */
-function computeMeasure(nodes: GraphNode[], edges: GraphEdge[], focus: readonly string[]): Measure {
+function computeMeasure(
+	nodes: readonly GraphNode[],
+	edges: readonly GraphEdge[],
+	focus: readonly string[]
+): Measure {
 	const degrees = computeDegreeMap(nodes, edges)
 	const specialNeighbors = collectSpecialNeighbors(focus, edges)
 	return nodes.reduce<Measure>(
 		(total, node) => {
 			const degree = degrees.get(node.id) ?? 0
-			const qualifies = degree >= 3 || specialNeighbors.has(node.id)
+			const qualifies = degree >= 3 || node.id in specialNeighbors
 			if (!qualifies) return total
 			if (node.colors.length === 3) return { ...total, n3: total.n3 + 1 }
 			if (node.colors.length === 2) return { ...total, n2: total.n2 + 1 }

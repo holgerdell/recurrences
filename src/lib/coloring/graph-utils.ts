@@ -1,5 +1,3 @@
-import { SvelteMap, SvelteSet } from "svelte/reactivity"
-
 /**
  * Canonical color identifiers used throughout the coloring visualizations.
  */
@@ -10,7 +8,6 @@ export type Color = 1 | 2 | 3 | 4
  */
 export interface GraphNode {
 	id: string
-	label: string
 	colors: readonly Color[]
 	diff?: "root" | "changed" | "unchanged"
 	removedColors?: readonly Color[]
@@ -25,43 +22,42 @@ export interface GraphEdge {
 }
 
 /**
- * Builds a symmetric adjacency map to accelerate local graph traversals.
+ * Builds a symmetric Neighbors map to accelerate local graph traversals.
  *
  * @param nodes - Nodes that define allowed adjacency entries.
  * @param edges - Edge list that will be inserted bidirectionally.
  * @returns Map from node id to a set of neighboring ids.
  */
-export function buildAdjacencyMap(nodes: GraphNode[], edges: GraphEdge[]) {
-	const adjacency = new SvelteMap<string, SvelteSet<string>>()
-	for (const node of nodes) adjacency.set(node.id, new SvelteSet())
+export function buildNeighborsMap(nodes: readonly GraphNode[], edges: readonly GraphEdge[]) {
+	const neighborsMap: Record<string, string[]> = {}
+	for (const node of nodes) neighborsMap[node.id] = []
 	for (const edge of edges) {
-		if (!adjacency.has(edge.from) || !adjacency.has(edge.to)) continue
-		adjacency.get(edge.from)?.add(edge.to)
-		adjacency.get(edge.to)?.add(edge.from)
+		neighborsMap[edge.from].push(edge.to)
+		neighborsMap[edge.to].push(edge.from)
 	}
-	return adjacency
+	return neighborsMap
 }
 
 /**
- * Converts an adjacency map into a dense boolean matrix over a fixed node ordering.
+ * Converts an Neighbors map into a dense boolean matrix over a fixed node ordering.
  *
  * @param nodeIds - Node identifiers defining row/column order.
- * @param adjacency - Adjacency map produced by buildAdjacencyMap.
+ * @param adjacency - Neighbors map produced by buildNeighborsMap.
  * @returns Boolean matrix indicating connectivity.
  */
 export function buildAdjacencyMatrix(
 	nodeIds: readonly string[],
-	adjacency: SvelteMap<string, SvelteSet<string>>
+	adjacency: Readonly<Record<string, readonly string[]>>
 ) {
 	const size = nodeIds.length
 	const matrix = Array.from({ length: size }, () => Array<boolean>(size).fill(false))
-	const lookup = new SvelteMap<string, number>()
-	nodeIds.forEach((id, idx) => lookup.set(id, idx))
+	const lookup: Record<string, number> = {}
+	nodeIds.forEach((id, idx) => (lookup[id] = idx))
 	for (let i = 0; i < size; i++) {
-		const neighbors = adjacency.get(nodeIds[i])
+		const neighbors = adjacency[nodeIds[i]]
 		if (!neighbors) continue
 		for (const neighborId of neighbors) {
-			const j = lookup.get(neighborId)
+			const j = lookup[neighborId]
 			if (j === undefined) continue
 			matrix[i][j] = true
 		}
@@ -76,8 +72,8 @@ export function buildAdjacencyMatrix(
  * @param edges - Graph edges used to increment degree counts.
  * @returns Map from node id to its degree.
  */
-export function computeDegreeMap(nodes: GraphNode[], edges: GraphEdge[]) {
-	const degrees = new SvelteMap<string, number>()
+export function computeDegreeMap(nodes: readonly GraphNode[], edges: readonly GraphEdge[]) {
+	const degrees = new Map<string, number>()
 	for (const node of nodes) degrees.set(node.id, 0)
 	for (const edge of edges) {
 		degrees.set(edge.from, (degrees.get(edge.from) ?? 0) + 1)
@@ -93,12 +89,14 @@ export function computeDegreeMap(nodes: GraphNode[], edges: GraphEdge[]) {
  * @param edges - Graph edges describing adjacency.
  * @returns Set of node ids that border a focus vertex.
  */
-export function collectSpecialNeighbors(focus: readonly string[], edges: GraphEdge[]) {
-	const focusSet = new SvelteSet(focus)
-	const special = new SvelteSet<string>()
+export function collectSpecialNeighbors(
+	focus: readonly string[],
+	edges: readonly GraphEdge[]
+): string[] {
+	const special = []
 	for (const edge of edges) {
-		if (focusSet.has(edge.from)) special.add(edge.to)
-		if (focusSet.has(edge.to)) special.add(edge.from)
+		if (edge.from in focus) special.push(edge.to)
+		if (edge.to in focus) special.push(edge.from)
 	}
 	return special
 }
