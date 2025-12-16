@@ -73,30 +73,28 @@ export function buildAdjacencyMatrix(
  * @returns Map from node id to its degree.
  */
 export function computeDegreeMap(nodes: readonly GraphNode[], edges: readonly GraphEdge[]) {
-	const degrees = new Map<string, number>()
-	for (const node of nodes) degrees.set(node.id, 0)
+	const degrees: Record<string, number> = {}
+	for (const node of nodes) degrees[node.id] = 0
 	for (const edge of edges) {
-		degrees.set(edge.from, (degrees.get(edge.from) ?? 0) + 1)
-		degrees.set(edge.to, (degrees.get(edge.to) ?? 0) + 1)
+		degrees[edge.from] = degrees[edge.from] + 1
+		degrees[edge.to] = degrees[edge.to] + 1
 	}
 	return degrees
 }
 
 /**
- * Collects all vertices adjacent to any focus vertex, marking special neighbors.
+ * Compute the open neighborhood of a set of vertices
  *
- * @param focus - IDs designated as focal roots.
+ * @param set - A set of vertices, given by their IDs
  * @param edges - Graph edges describing adjacency.
  * @returns Set of node ids that border a focus vertex.
  */
-export function collectSpecialNeighbors(
-	focus: readonly string[],
-	edges: readonly GraphEdge[]
-): string[] {
-	const special = []
+export function openNeighborhood(set: readonly string[], edges: readonly GraphEdge[]): string[] {
+	const S = new Set<string>(set)
+	const neighborhood = new Set<string>()
 	for (const edge of edges) {
-		if (edge.from in focus) special.push(edge.to)
-		if (edge.to in focus) special.push(edge.from)
+		if (S.has(edge.from)) neighborhood.add(edge.to)
+		if (S.has(edge.to)) neighborhood.add(edge.from)
 	}
-	return special
+	return [...neighborhood].toSorted()
 }

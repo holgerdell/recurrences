@@ -99,19 +99,15 @@
 
 				<div class="mt-3 text-xs font-semibold tracking-wide text-gray-500 uppercase">Solution</div>
 				<div class="font-mono text-base text-gray-800">
-					{#if analysis.customSolution}
-						{analysis.customSolution}
-					{:else}
-						{#await recurrenceSolutions[i]}
-							<span class="text-gray-500">Computing…</span>
-						{:then solution}
-							{solution}
-						{:catch error}
-							<span class="text-red-600">
-								{error instanceof Error ? error.message : String(error)}
-							</span>
-						{/await}
-					{/if}
+					{#await recurrenceSolutions[i]}
+						<span class="text-gray-500">Computing…</span>
+					{:then solution}
+						{solution}
+					{:catch error}
+						<span class="text-red-600">
+							{error instanceof Error ? error.message : String(error)}
+						</span>
+					{/await}
 				</div>
 			</div>
 

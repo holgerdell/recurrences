@@ -1,7 +1,7 @@
 import { SvelteMap, SvelteSet } from "svelte/reactivity"
 
 import type { Color, GraphEdge, GraphNode } from "./graph-utils"
-import { collectSpecialNeighbors, computeDegreeMap } from "./graph-utils"
+import { openNeighborhood, computeDegreeMap } from "./graph-utils"
 import {
 	ALL_LOCAL_SITUATIONS,
 	buildMissingRuleSnippets as buildMissingRuleSnippetsFromCanon,
@@ -54,7 +54,6 @@ export interface RuleAnalysis {
 	weightVector?: WeightVector | null
 	solverDisplay?: string
 	solverEquation?: string
-	customSolution?: string
 }
 
 /**
@@ -324,7 +323,7 @@ function applyBranchWithDiff(
  *
  * @param nodes - Graph nodes to evaluate.
  * @param edges - Graph edges for degree and neighbor calculations.
- * @param focus - Root ids whose neighbors always qualify.
+ * @param focus - Root ids whose open neighborhood always qualifies.
  * @returns Measure counting qualifying 3-color and 2-color vertices.
  */
 function computeMeasure(
@@ -333,18 +332,16 @@ function computeMeasure(
 	focus: readonly string[]
 ): Measure {
 	const degrees = computeDegreeMap(nodes, edges)
-	const specialNeighbors = collectSpecialNeighbors(focus, edges)
-	return nodes.reduce<Measure>(
-		(total, node) => {
-			const degree = degrees.get(node.id) ?? 0
-			const qualifies = degree >= 3 || node.id in specialNeighbors
-			if (!qualifies) return total
-			if (node.colors.length === 3) return { ...total, n3: total.n3 + 1 }
-			if (node.colors.length === 2) return { ...total, n2: total.n2 + 1 }
-			return total
-		},
-		{ n3: 0, n2: 0 }
-	)
+	const nonBranchingVertices = openNeighborhood(focus, edges)
+	let n3 = 0
+	let n2 = 0
+	for (const node of nodes) {
+		const qualifies = degrees[node.id] >= 3 || nonBranchingVertices.find((x) => x === node.id)
+		if (!qualifies) continue
+		if (node.colors.length === 3) n3 += 1
+		else if (node.colors.length === 2) n2 += 1
+	}
+	return { n3, n2 }
 }
 
 /**
@@ -455,133 +452,6 @@ function buildWeightedScalarRecurrence(
 }
 
 /**
- * Computes the greatest common divisor of two integers, guarding against zeros.
- *
- * @param a - First integer value.
- * @param b - Second integer value.
- * @returns Nonzero gcd so lambda ratios stay simplified.
- */
-function gcdInt(a: number, b: number) {
-	let x = Math.abs(a)
-	let y = Math.abs(b)
-	if (x === 0) return y || 1
-	if (y === 0) return x || 1
-	while (y !== 0) {
-		const temp = x % y
-		x = y
-		y = temp
-	}
-	return x || 1
-}
-
-/**
- * Formats the tail argument used in invariant solutions after eliminating n₃.
- *
- * @param numerator - Numerator of the lambda ratio.
- * @param denominator - Denominator of the lambda ratio.
- * @returns String such as "n₂ + (1/2)·n₃".
- */
-function formatLambdaTail(numerator: number, denominator: number) {
-	if (numerator === 0) return "n₂"
-	const sign = numerator > 0 ? "+" : "-"
-	const absNum = Math.abs(numerator)
-	const ratio = denominator === 1 ? `${absNum}` : `${absNum}/${denominator}`
-	const needsCoeff = !(absNum === 1 && denominator === 1)
-	const coeff = needsCoeff ? `${denominator === 1 ? ratio : `(${ratio})`}·` : ""
-	const term = `${coeff}n₃`
-	return `n₂ ${sign} ${term}`
-}
-
-/**
- * Finds the exponential growth factor implied by n₃-only drops, if any.
- *
- * @param entries - Tuples of drop size and multiplicity.
- * @returns Dominant base or null when the search fails.
- */
-function findN3OnlyGrowthBase(entries: Array<[number, number]>) {
-	if (entries.length === 0) return null
-	const evaluate = (r: number) =>
-		entries.reduce((sum, [drop, count]) => sum + count * Math.pow(r, -drop), 0) - 1
-	const valueAtOne = entries.reduce((total, [, count]) => total + count, 0) - 1
-	if (Math.abs(valueAtOne) < 1e-9) return 1
-	let low = 1
-	let high = 2
-	let valueAtHigh = evaluate(high)
-	while (valueAtHigh > 0 && high < 1e6) {
-		low = high
-		high *= 2
-		valueAtHigh = evaluate(high)
-	}
-	if (valueAtHigh > 0) return null
-	let result = high
-	for (let i = 0; i < 80; i++) {
-		const mid = (low + high) / 2
-		const value = evaluate(mid)
-		if (value > 0) low = mid
-		else {
-			result = mid
-			high = mid
-		}
-	}
-	return result
-}
-
-/**
- * Constructs an invariant text when every branch drops only the n₃ component.
- *
- * @param deltas - Measure deltas for each branch.
- * @returns Human-readable invariant summary or undefined if not applicable.
- */
-function buildN3OnlyInvariantSolution(deltas: Measure[]): string | undefined {
-	if (deltas.length === 0) return
-	if (!deltas.every((delta) => delta.n3 > 0)) return
-	const dropCounts = new SvelteMap<number, number>()
-	for (const delta of deltas) {
-		dropCounts.set(delta.n3, (dropCounts.get(delta.n3) ?? 0) + 1)
-	}
-	const entries = Array.from(dropCounts.entries()).sort((a, b) => a[0] - b[0])
-	const recurrenceTerms = entries.map(([drop, count]) => {
-		const base = `T(n₃-${drop})`
-		return count > 1 ? `${count}*${base}` : base
-	})
-	const recurrence = `T(n₃) = ${recurrenceTerms.join(" + ")}`
-	const growth = findN3OnlyGrowthBase(entries)
-	if (growth === null) return `n₃-only invariant: ${recurrence}`
-	if (growth <= 1 + 1e-6) return `n₃-only invariant: ${recurrence} ⇒ O(1)`
-	const formatted = growth >= 10 ? growth.toFixed(2) : growth.toFixed(4)
-	return `n₃-only invariant: ${recurrence} ⇒ O(${formatted}^{n₃})`
-}
-
-/**
- * Attempts to derive a closed-form invariant solution when all drops are identical.
- *
- * @param branchCount - Number of branches in the rule.
- * @param deltas - Measure deltas per branch.
- * @returns Solution text or undefined when no closed form is found.
- */
-function deriveInvariantSolution(branchCount: number, deltas: Measure[]): string | undefined {
-	if (branchCount === 0 || deltas.length === 0) return
-	const [first, ...rest] = deltas
-	const identicalDrops =
-		first.n3 > 0 && rest.every((delta) => delta.n3 === first.n3 && delta.n2 === first.n2)
-	if (identicalDrops) {
-		const dropN3 = first.n3
-		const dropN2 = first.n2
-		const lambdaNumerator = -dropN2
-		const lambdaDenominator = dropN3
-		if (!Number.isFinite(lambdaNumerator) || !Number.isFinite(lambdaDenominator)) return
-		const gcd = gcdInt(lambdaNumerator, lambdaDenominator)
-		const normalizedNumerator = lambdaNumerator / gcd
-		const normalizedDenominator = lambdaDenominator / gcd
-		const tail = formatLambdaTail(normalizedNumerator, normalizedDenominator)
-		const exponent = dropN3 === 1 ? "n₃" : `n₃/${dropN3}`
-		const factor = `${branchCount}^{${exponent}}`
-		return `T(n₃,n₂) = ${factor} · T(0, ${tail})`
-	}
-	return buildN3OnlyInvariantSolution(deltas)
-}
-
-/**
  * Runs the full analyzer on a rule: applies each branch, measures deltas, and builds recurrences.
  *
  * @param rule - Branching rule to analyze.
@@ -595,17 +465,15 @@ export function analyzeRule(rule: BranchingRule): RuleAnalysis {
 		const after = applyBranchWithDiff(rule, branch)
 		const measureAfter = computeMeasure(after.nodes, after.edges, focus)
 		const hasColoring = hasProperColoring(after.nodes, after.edges)
-		const rawDelta: Measure = {
+		const delta: Measure = {
 			n3: measureBefore.n3 - measureAfter.n3,
 			n2: measureBefore.n2 - measureAfter.n2
 		}
-		const delta = rawDelta.n3 === 0 && rawDelta.n2 === 0 ? { n3: 0, n2: 1 } : rawDelta
 		return { after, measureAfter, delta, hasColoring }
 	})
 	const deltas = branchDetails.map((b) => b.delta)
 	const { display, equation } = buildRecurrenceStrings(deltas)
 	const weightVector = findWeightVector(deltas)
-	const customSolution = deriveInvariantSolution(rule.branches.length, deltas)
 	let solverDisplay: string | undefined
 	let solverEquation: string | undefined
 	if (weightVector) {
@@ -626,8 +494,7 @@ export function analyzeRule(rule: BranchingRule): RuleAnalysis {
 		recurrenceEquation: equation,
 		weightVector,
 		solverDisplay,
-		solverEquation,
-		customSolution
+		solverEquation
 	}
 }
 
