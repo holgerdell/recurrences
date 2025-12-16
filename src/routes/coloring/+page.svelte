@@ -22,7 +22,6 @@
 	}
 
 	interface Branch {
-		label: string
 		assignments: Record<string, readonly Color[]>
 	}
 
@@ -66,6 +65,20 @@
 		w2: number
 	}
 
+	interface CanonicalSituation {
+		signature: string
+		nodes: GraphNode[]
+		edges: GraphEdge[]
+	}
+
+	interface ExhaustivenessReport {
+		exhaustive: boolean
+		missing: CanonicalSituation[]
+		missingCount: number
+		coveredCount: number
+		totalSituations: number
+	}
+
 	// ============================================================
 	// Example branching rules
 	// ============================================================
@@ -92,9 +105,9 @@
 				]
 			},
 			branches: [
-				{ label: "v = 1", assignments: { v: [1] } },
-				{ label: "v = 2", assignments: { v: [2] } },
-				{ label: "v = 3", assignments: { v: [3] } }
+				{ assignments: { v: [1] } },
+				{ assignments: { v: [2] } },
+				{ assignments: { v: [3] } }
 			]
 		},
 
@@ -119,10 +132,7 @@
 					{ from: "v", to: "u3" }
 				]
 			},
-			branches: [
-				{ label: "v = 1", assignments: { v: [1] } },
-				{ label: "v ∈ {2,3}", assignments: { v: [2, 3] } }
-			]
+			branches: [{ assignments: { v: [1] } }, { assignments: { v: [2, 3] } }]
 		},
 
 		// --------------------------------------------------------
@@ -149,11 +159,9 @@
 			},
 			branches: [
 				{
-					label: "v = 1",
 					assignments: { v: [1] }
 				},
 				{
-					label: "v = 2",
 					assignments: { v: [2] }
 				}
 			]
@@ -183,11 +191,9 @@
 			},
 			branches: [
 				{
-					label: "v = 1",
 					assignments: { v: [1] }
 				},
 				{
-					label: "v = 2",
 					assignments: { v: [2] }
 				}
 			]
@@ -218,20 +224,523 @@
 			},
 			branches: [
 				{
-					label: "v₁ = 1, v₂ ∈ {2,3}",
 					assignments: { v1: [1], v2: [2, 3] }
 				},
 				{
-					label: "v₁ ∈ {2,3}, v₂ = 1",
 					assignments: { v1: [2, 3], v2: [1] }
 				},
 				{
-					label: "v₁ ∈ {2,3}, v₂ ∈ {2,3}",
 					assignments: { v1: [2, 3], v2: [2, 3] }
 				}
 			]
+		},
+		{
+			name: "Generated rule 1",
+			description: "Auto-generated for missing signature 12|123|13|23:111000",
+			root: "v",
+			focus: ["v"],
+			before: {
+				nodes: [
+					{ id: "v", label: "v", colors: [1, 2] },
+					{ id: "a", label: "a", colors: [1, 2, 3] },
+					{ id: "b", label: "b", colors: [1, 3] },
+					{ id: "c", label: "c", colors: [2, 3] }
+				],
+				edges: [
+					{ from: "v", to: "a" },
+					{ from: "v", to: "b" },
+					{ from: "v", to: "c" }
+				]
+			},
+			branches: [{ assignments: { v: [1] } }, { assignments: { v: [2] } }]
+		},
+
+		{
+			name: "Generated rule 2",
+			description: "Auto-generated for missing signature 13|123|12|23:111000",
+			root: "v",
+			focus: ["v"],
+			before: {
+				nodes: [
+					{ id: "v", label: "v", colors: [1, 3] },
+					{ id: "a", label: "a", colors: [1, 2, 3] },
+					{ id: "b", label: "b", colors: [1, 2] },
+					{ id: "c", label: "c", colors: [2, 3] }
+				],
+				edges: [
+					{ from: "v", to: "a" },
+					{ from: "v", to: "b" },
+					{ from: "v", to: "c" }
+				]
+			},
+			branches: [{ assignments: { v: [1] } }, { assignments: { v: [3] } }]
+		},
+
+		{
+			name: "Generated rule 3",
+			description: "Auto-generated for missing signature 23|123|12|13:111000",
+			root: "v",
+			focus: ["v"],
+			before: {
+				nodes: [
+					{ id: "v", label: "v", colors: [2, 3] },
+					{ id: "a", label: "a", colors: [1, 2, 3] },
+					{ id: "b", label: "b", colors: [1, 2] },
+					{ id: "c", label: "c", colors: [1, 3] }
+				],
+				edges: [
+					{ from: "v", to: "a" },
+					{ from: "v", to: "b" },
+					{ from: "v", to: "c" }
+				]
+			},
+			branches: [{ assignments: { v: [2] } }, { assignments: { v: [3] } }]
+		},
+
+		{
+			name: "Generated rule 4",
+			description: "Auto-generated for missing signature 123|12|13|23:111000",
+			root: "v",
+			focus: ["v"],
+			before: {
+				nodes: [
+					{ id: "v", label: "v", colors: [1, 2, 3] },
+					{ id: "a", label: "a", colors: [1, 2] },
+					{ id: "b", label: "b", colors: [1, 3] },
+					{ id: "c", label: "c", colors: [2, 3] }
+				],
+				edges: [
+					{ from: "v", to: "a" },
+					{ from: "v", to: "b" },
+					{ from: "v", to: "c" }
+				]
+			},
+			branches: [
+				{ assignments: { v: [1] } },
+				{ assignments: { v: [2] } },
+				{ assignments: { v: [3] } }
+			]
+		},
+
+		{
+			name: "Generated rule 5",
+			description: "Auto-generated for missing signature 123|123|12|13:111000",
+			root: "v",
+			focus: ["v"],
+			before: {
+				nodes: [
+					{ id: "v", label: "v", colors: [1, 2, 3] },
+					{ id: "a", label: "a", colors: [1, 2, 3] },
+					{ id: "b", label: "b", colors: [1, 2] },
+					{ id: "c", label: "c", colors: [1, 3] }
+				],
+				edges: [
+					{ from: "v", to: "a" },
+					{ from: "v", to: "b" },
+					{ from: "v", to: "c" }
+				]
+			},
+			branches: [
+				{ assignments: { v: [1] } },
+				{ assignments: { v: [2] } },
+				{ assignments: { v: [3] } }
+			]
+		},
+		{
+			name: "Generated rule 6",
+			description: "Auto-generated for missing signature 123|123|12|23:111000",
+			root: "v",
+			focus: ["v"],
+			before: {
+				nodes: [
+					{ id: "v", label: "v", colors: [1, 2, 3] },
+					{ id: "a", label: "a", colors: [1, 2, 3] },
+					{ id: "b", label: "b", colors: [1, 2] },
+					{ id: "c", label: "c", colors: [2, 3] }
+				],
+				edges: [
+					{ from: "v", to: "a" },
+					{ from: "v", to: "b" },
+					{ from: "v", to: "c" }
+				]
+			},
+			branches: [
+				{ assignments: { v: [1] } },
+				{ assignments: { v: [2] } },
+				{ assignments: { v: [3] } }
+			]
+		},
+		{
+			name: "Generated rule 7",
+			description: "Auto-generated for missing signature 123|123|13|23:111000",
+			root: "v",
+			focus: ["v"],
+			before: {
+				nodes: [
+					{ id: "v", label: "v", colors: [1, 2, 3] },
+					{ id: "a", label: "a", colors: [1, 2, 3] },
+					{ id: "b", label: "b", colors: [1, 3] },
+					{ id: "c", label: "c", colors: [2, 3] }
+				],
+				edges: [
+					{ from: "v", to: "a" },
+					{ from: "v", to: "b" },
+					{ from: "v", to: "c" }
+				]
+			},
+			branches: [
+				{ assignments: { v: [1] } },
+				{ assignments: { v: [2] } },
+				{ assignments: { v: [3] } }
+			]
 		}
 	]
+
+	// ============================================================
+	// Canonicalization + exhaustive situation generation
+	// ============================================================
+	const COLOR_LIST_OPTIONS: readonly (readonly Color[])[] = [
+		[1, 2],
+		[1, 3],
+		[2, 3],
+		[1, 2, 3]
+	] as const
+
+	const NEIGHBOR_PERMUTATIONS: readonly [number, number, number][] = [
+		[0, 1, 2],
+		[0, 2, 1],
+		[1, 0, 2],
+		[1, 2, 0],
+		[2, 0, 1],
+		[2, 1, 0]
+	] as const
+
+	function normalizeColors(colors: readonly Color[]): readonly Color[] {
+		return Array.from(new SvelteSet(colors)).sort((a, b) => a - b) as readonly Color[]
+	}
+
+	function listsEqual(lhs: readonly Color[], rhs: readonly Color[]) {
+		if (lhs.length !== rhs.length) return false
+		for (let i = 0; i < lhs.length; i++) {
+			if (lhs[i] !== rhs[i]) return false
+		}
+		return true
+	}
+
+	function neighborKeyMatchesRoot(neighborLists: readonly (readonly Color[])[], rootKey: string) {
+		return neighborLists.some((colors) => colors.length === 2 && colorsToKey(colors) === rootKey)
+	}
+
+	function buildBranchesFromRoot(colors: readonly Color[]) {
+		return colors.map((color) => ({
+			assignments: { v: [color] as readonly Color[] }
+		}))
+	}
+
+	function formatColorsLiteral(colors: readonly Color[]) {
+		return `[${colors.join(", ")}]`
+	}
+
+	function formatNodeLiteral(node: GraphNode) {
+		return `{ id: "${node.id}", label: "${node.label}", colors: ${formatColorsLiteral(node.colors)} }`
+	}
+
+	function formatEdgeLiteral(edge: GraphEdge) {
+		return `{ from: "${edge.from}", to: "${edge.to}" }`
+	}
+
+	function formatAssignmentsLiteral(assignments: Record<string, readonly Color[]>) {
+		const entries = Object.entries(assignments)
+			.sort(([a], [b]) => a.localeCompare(b))
+			.map(([id, colors]) => `${id}: ${formatColorsLiteral(colors)}`)
+		return `{ ${entries.join(", ")} }`
+	}
+
+	function describeSingleAssignment(id: string, colors: readonly Color[]) {
+		if (colors.length === 1) return `${id} = ${colors[0]}`
+		return `${id} ∈ {${colors.join(", ")}}`
+	}
+
+	function describeAssignments(assignments: Record<string, readonly Color[]>) {
+		const entries = Object.entries(assignments)
+			.sort(([a], [b]) => a.localeCompare(b))
+			.map(([id, colors]) => describeSingleAssignment(id, colors))
+		return entries.join(", ")
+	}
+
+	function formatBranchLiteral(assignments: Record<string, readonly Color[]>) {
+		return `{ assignments: ${formatAssignmentsLiteral(assignments)} }`
+	}
+
+	function formatMeasureTerm(coefficient: number, label: string) {
+		if (coefficient === 0) return null
+		return coefficient === 1 ? label : `${coefficient}·${label}`
+	}
+
+	function appendLiterals(lines: string[], items: readonly string[], indent: string) {
+		items.forEach((literal, index) => {
+			const suffix = index === items.length - 1 ? "" : ","
+			lines.push(`${indent}${literal}${suffix}`)
+		})
+	}
+
+	function formatBranchingRuleTemplate(situation: CanonicalSituation, index: number) {
+		const rootNode = situation.nodes.find((node) => node.id === "v") ?? situation.nodes[0]
+		if (!rootNode || (rootNode.colors.length !== 2 && rootNode.colors.length !== 3)) return null
+		const branches = buildBranchesFromRoot(rootNode.colors)
+		const nodeLines = situation.nodes.map((node) => formatNodeLiteral(node))
+		const edgeLines = situation.edges.map((edge) => formatEdgeLiteral(edge))
+		const branchLines = branches.map((branch) => formatBranchLiteral(branch.assignments))
+		const lines: string[] = []
+		lines.push("{")
+		lines.push(`  name: "Generated rule ${index + 1}",`)
+		lines.push(`  description: "Auto-generated for missing signature ${situation.signature}",`)
+		lines.push('  root: "v",')
+		lines.push('  focus: ["v"],')
+		lines.push("  before: {")
+		lines.push("    nodes: [")
+		appendLiterals(lines, nodeLines, "      ")
+		lines.push("    ],")
+		lines.push("    edges: [")
+		appendLiterals(lines, edgeLines, "      ")
+		lines.push("    ]")
+		lines.push("  },")
+		lines.push("  branches: [")
+		appendLiterals(lines, branchLines, "    ")
+		lines.push("  ]")
+		lines.push("}")
+		return lines.join("\n")
+	}
+
+	function isEligibleList(colors: readonly Color[]) {
+		return colors.length === 2 || colors.length === 3
+	}
+
+	function colorsToKey(colors: readonly Color[]) {
+		return colors.join("")
+	}
+
+	function buildAdjacencyMap(nodes: GraphNode[], edges: GraphEdge[]) {
+		const adjacency = new SvelteMap<string, SvelteSet<string>>()
+		for (const node of nodes) adjacency.set(node.id, new SvelteSet())
+		for (const edge of edges) {
+			if (!adjacency.has(edge.from) || !adjacency.has(edge.to)) continue
+			adjacency.get(edge.from)?.add(edge.to)
+			adjacency.get(edge.to)?.add(edge.from)
+		}
+		return adjacency
+	}
+
+	function createSignature(
+		colorStrings: readonly string[],
+		adjacencyMatrix: boolean[][],
+		order: readonly number[]
+	) {
+		const colorPart = order.map((index) => colorStrings[index]).join("|")
+		const edges: string[] = []
+		for (let i = 0; i < order.length; i++) {
+			for (let j = i + 1; j < order.length; j++) {
+				edges.push(adjacencyMatrix[order[i]][order[j]] ? "1" : "0")
+			}
+		}
+		return `${colorPart}:${edges.join("")}`
+	}
+
+	function buildCanonicalNodes(
+		rootColors: readonly Color[],
+		neighborColors: readonly (readonly Color[])[],
+		permutation: readonly number[]
+	) {
+		const labels = ["v", "a", "b", "c"] as const
+		const orderedNeighbors = permutation.map((index) => neighborColors[index])
+		const nodes: GraphNode[] = [
+			{ id: labels[0], label: labels[0], colors: [...rootColors] as readonly Color[] }
+		]
+		orderedNeighbors.forEach((colors, idx) => {
+			nodes.push({
+				id: labels[idx + 1],
+				label: labels[idx + 1],
+				colors: [...colors] as readonly Color[]
+			})
+		})
+		return nodes
+	}
+
+	function buildCanonicalEdges(adjacencyMatrix: boolean[][], permutation: readonly number[]) {
+		const labels = ["v", "a", "b", "c"] as const
+		const order = [0, permutation[0] + 1, permutation[1] + 1, permutation[2] + 1]
+		const edges: GraphEdge[] = []
+		for (let i = 0; i < labels.length; i++) {
+			for (let j = i + 1; j < labels.length; j++) {
+				if (adjacencyMatrix[order[i]][order[j]]) edges.push({ from: labels[i], to: labels[j] })
+			}
+		}
+		return edges
+	}
+
+	function buildAdjacencyMatrix(
+		nodeIds: readonly string[],
+		adjacency: SvelteMap<string, SvelteSet<string>>
+	) {
+		const size = nodeIds.length
+		const matrix = Array.from({ length: size }, () => Array<boolean>(size).fill(false))
+		const lookup = new SvelteMap<string, number>()
+		nodeIds.forEach((id, idx) => lookup.set(id, idx))
+		for (let i = 0; i < size; i++) {
+			const neighbors = adjacency.get(nodeIds[i])
+			if (!neighbors) continue
+			for (const neighborId of neighbors) {
+				const j = lookup.get(neighborId)
+				if (j === undefined) continue
+				matrix[i][j] = true
+			}
+		}
+		return matrix
+	}
+
+	function canonicalizeSubset(
+		rootNode: GraphNode,
+		neighborIds: readonly string[],
+		nodeLookup: SvelteMap<string, GraphNode>,
+		adjacency: SvelteMap<string, SvelteSet<string>>
+	): CanonicalSituation | null {
+		if (neighborIds.length !== 3) return null
+		const neighborNodes = neighborIds
+			.map((id) => nodeLookup.get(id))
+			.filter((node): node is GraphNode => Boolean(node))
+		if (neighborNodes.length !== 3) return null
+		const rootColors = normalizeColors(rootNode.colors)
+		const neighborColors = neighborNodes.map((node) => normalizeColors(node.colors))
+		if (
+			rootColors.length === 2 &&
+			neighborColors.some((colors) => colors.length === 2 && listsEqual(colors, rootColors))
+		) {
+			return null
+		}
+		const nodeIds = [rootNode.id, ...neighborIds]
+		const adjacencyMatrix = buildAdjacencyMatrix(nodeIds, adjacency)
+		const colorStrings = [rootColors, ...neighborColors].map((colors) => colorsToKey(colors))
+		let bestSignature = ""
+		let bestPermutation = NEIGHBOR_PERMUTATIONS[0]
+		for (const permutation of NEIGHBOR_PERMUTATIONS) {
+			const order = [0, permutation[0] + 1, permutation[1] + 1, permutation[2] + 1]
+			const signature = createSignature(colorStrings, adjacencyMatrix, order)
+			if (bestSignature === "" || signature < bestSignature) {
+				bestSignature = signature
+				bestPermutation = permutation
+			}
+		}
+		return {
+			signature: bestSignature,
+			nodes: buildCanonicalNodes(rootColors, neighborColors, bestPermutation),
+			edges: buildCanonicalEdges(adjacencyMatrix, bestPermutation)
+		}
+	}
+
+	function combinations<T>(items: readonly T[], k: number) {
+		const results: T[][] = []
+		if (k === 0) {
+			results.push([])
+			return results
+		}
+		const current: T[] = []
+		const backtrack = (index: number, remaining: number) => {
+			if (remaining === 0) {
+				results.push([...current])
+				return
+			}
+			for (let i = index; i <= items.length - remaining; i++) {
+				current.push(items[i])
+				backtrack(i + 1, remaining - 1)
+				current.pop()
+			}
+		}
+		backtrack(0, k)
+		return results
+	}
+
+	function canonicalizeLocalSituations(nodes: GraphNode[], edges: GraphEdge[], rootId: string) {
+		const nodeLookup = new SvelteMap(nodes.map((node) => [node.id, node] as const))
+		const rootNode = nodeLookup.get(rootId)
+		if (!rootNode || !isEligibleList(rootNode.colors)) return []
+		const adjacency = buildAdjacencyMap(nodes, edges)
+		const eligibleNeighbors = Array.from(adjacency.get(rootId) ?? []).filter((neighborId) => {
+			const node = nodeLookup.get(neighborId)
+			return Boolean(node && isEligibleList(node.colors))
+		})
+		if (eligibleNeighbors.length < 3) return []
+		const seen = new SvelteSet<string>()
+		const results: CanonicalSituation[] = []
+		for (const subset of combinations(eligibleNeighbors, 3)) {
+			const canonical = canonicalizeSubset(rootNode, subset, nodeLookup, adjacency)
+			if (!canonical) continue
+			if (seen.has(canonical.signature)) continue
+			seen.add(canonical.signature)
+			results.push(canonical)
+		}
+		return results
+	}
+
+	function generateAllLocalSituations() {
+		const seen = new SvelteMap<string, CanonicalSituation>()
+		for (const rootColors of COLOR_LIST_OPTIONS) {
+			const normalizedRoot = normalizeColors(rootColors)
+			const rootKey = colorsToKey(normalizedRoot)
+			const rootHasTwoColors = normalizedRoot.length === 2
+			for (const firstNeighbor of COLOR_LIST_OPTIONS) {
+				for (const secondNeighbor of COLOR_LIST_OPTIONS) {
+					for (const thirdNeighbor of COLOR_LIST_OPTIONS) {
+						const neighborNormalized = [
+							normalizeColors(firstNeighbor),
+							normalizeColors(secondNeighbor),
+							normalizeColors(thirdNeighbor)
+						]
+						const neighborKeys = neighborNormalized.map((colors) => colorsToKey(colors))
+						if (new SvelteSet(neighborKeys).size !== neighborKeys.length) continue
+						if (rootHasTwoColors && neighborKeyMatchesRoot(neighborNormalized, rootKey)) continue
+						const nodes: GraphNode[] = [
+							{ id: "root", label: "v", colors: rootColors },
+							{ id: "n0", label: "u₁", colors: firstNeighbor },
+							{ id: "n1", label: "u₂", colors: secondNeighbor },
+							{ id: "n2", label: "u₃", colors: thirdNeighbor }
+						]
+						const edges: GraphEdge[] = [
+							{ from: "root", to: "n0" },
+							{ from: "root", to: "n1" },
+							{ from: "root", to: "n2" }
+						]
+						const canonicalSituations = canonicalizeLocalSituations(nodes, edges, "root")
+						for (const situation of canonicalSituations) {
+							if (!seen.has(situation.signature)) seen.set(situation.signature, situation)
+						}
+					}
+				}
+			}
+		}
+		return Array.from(seen.values())
+	}
+
+	function testBranchingRuleExhaustiveness(rulesToCheck: BranchingRule[]): ExhaustivenessReport {
+		const coverage = new SvelteSet<string>()
+		for (const rule of rulesToCheck) {
+			const canonicalSituations = canonicalizeLocalSituations(
+				rule.before.nodes,
+				rule.before.edges,
+				rule.root
+			)
+			for (const situation of canonicalSituations) coverage.add(situation.signature)
+		}
+		const missing = ALL_LOCAL_SITUATIONS.filter((situation) => !coverage.has(situation.signature))
+		return {
+			exhaustive: missing.length === 0,
+			missing,
+			missingCount: missing.length,
+			coveredCount: coverage.size,
+			totalSituations: ALL_LOCAL_SITUATIONS.length
+		}
+	}
+
+	const ALL_LOCAL_SITUATIONS = generateAllLocalSituations()
 
 	// ============================================================
 	// Apply branch + compute diffs
@@ -537,13 +1046,19 @@
 		return { display, equation }
 	}
 
+	function isValidWeightVector(deltas: Measure[], weights: WeightVector) {
+		return deltas.every((delta) => weights.w3 * delta.n3 + weights.w2 * delta.n2 > 0)
+	}
+
 	function findWeightVector(deltas: Measure[]): WeightVector | null {
+		const preferred: WeightVector = { w3: 1, w2: 1 }
+		if (isValidWeightVector(deltas, preferred)) return preferred
 		const MAX_WEIGHT = 12
 		for (let w3 = 1; w3 <= MAX_WEIGHT; w3++) {
 			for (let w2 = 0; w2 <= MAX_WEIGHT; w2++) {
-				if (w2 === 0 && deltas.some((d) => d.n3 <= 0)) continue
-				const ok = deltas.every((delta) => w3 * delta.n3 + w2 * delta.n2 > 0)
-				if (ok) return { w3, w2 }
+				if (w3 === preferred.w3 && w2 === preferred.w2) continue
+				const candidate: WeightVector = { w3, w2 }
+				if (isValidWeightVector(deltas, candidate)) return candidate
 			}
 		}
 		return null
@@ -601,8 +1116,8 @@
 		if (weightVector) {
 			const weighted = buildWeightedScalarRecurrence(deltas, weightVector)
 			const components = [
-				`${weightVector.w3}·n₃`,
-				weightVector.w2 > 0 ? `${weightVector.w2}·n₂` : undefined
+				formatMeasureTerm(weightVector.w3, "n₃"),
+				formatMeasureTerm(weightVector.w2, "n₂")
 			].filter((part): part is string => Boolean(part))
 			const measureLabel = components.join(" + ")
 			solverDisplay = `Measure n = ${measureLabel}: ${weighted.display}`
@@ -626,6 +1141,10 @@
 			? solveRecurrencesFromStrings(analysis.solverEquation)
 			: Promise.resolve("No decreasing combination found")
 	)
+	const exhaustivenessReport = testBranchingRuleExhaustiveness(rules)
+	const missingRuleSnippets = exhaustivenessReport.missing
+		.map((situation, index) => formatBranchingRuleTemplate(situation, index))
+		.filter((snippet): snippet is string => Boolean(snippet))
 </script>
 
 <div class="mx-auto max-w-6xl space-y-12 p-8">
@@ -653,7 +1172,41 @@
 		(Neighbors of branching vertices are assumed to have degree at least three.)
 	</div>
 
-	{#each rules as rule, i}
+	<div class="rounded-lg border border-blue-200 bg-white p-4 text-sm text-gray-800">
+		<div class="text-xs font-semibold tracking-wide text-blue-700 uppercase">Coverage Check</div>
+		<p class="mt-2">
+			Covered {exhaustivenessReport.coveredCount} of {exhaustivenessReport.totalSituations} canonical
+			situations.
+		</p>
+		{#if exhaustivenessReport.exhaustive}
+			<p class="mt-1 text-sm font-medium text-green-700">
+				All eligible local situations are covered.
+			</p>
+		{:else}
+			<p class="mt-1 text-sm font-medium text-red-700">
+				Missing {exhaustivenessReport.missingCount} situations. Showing up to six examples below.
+			</p>
+			<div class="mt-4 grid gap-4 md:grid-cols-2">
+				{#each exhaustivenessReport.missing.slice(0, 6) as situation (situation.signature)}
+					<div class="space-y-2 rounded-lg border bg-gray-50 p-3">
+						<div class="text-xs font-semibold text-gray-500 uppercase">Missing situation</div>
+						<GraphView
+							root="v"
+							focus={["v"]}
+							scale={0.6}
+							nodes={situation.nodes.map((node, idx) => ({
+								...node,
+								diff: idx === 0 ? "root" : "unchanged"
+							}))}
+							edges={situation.edges}
+						/>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</div>
+
+	{#each rules as rule, i (rule.name)}
 		{@const analysis = ruleAnalyses[i]}
 		<section class="space-y-8 rounded-xl border border-gray-300 p-6">
 			<header>
@@ -707,11 +1260,11 @@
 				<h3 class="mb-3 font-medium">After branching</h3>
 
 				<div class="flex flex-wrap gap-6">
-					{#each rule.branches as branch, j}
+					{#each rule.branches as branch, j (branch.assignments)}
 						{@const branchView = analysis.branchDetails[j]}
 
 						<div class="flex-1 space-y-2 rounded-lg border bg-gray-50 p-4">
-							<div class="font-semibold">{branch.label}</div>
+							<div class="font-semibold">{describeAssignments(branch.assignments)}</div>
 
 							<GraphView
 								root={rule.root}
@@ -726,4 +1279,19 @@
 			</div>
 		</section>
 	{/each}
+
+	{#if missingRuleSnippets.length}
+		<section class="space-y-4 rounded-xl border border-gray-300 bg-white p-6">
+			<header>
+				<h2 class="text-xl font-semibold">Generated rule templates</h2>
+				<p class="mt-1 text-gray-600">
+					Copy any snippet below into <span class="font-mono">rules</span> to cover the remaining cases.
+				</p>
+			</header>
+			<pre
+				class="rounded-lg border bg-gray-50 p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+				{missingRuleSnippets.join("\n\n")}
+			</pre>
+		</section>
+	{/if}
 </div>

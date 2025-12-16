@@ -44,6 +44,7 @@
 	$effect(() => {
 		if (!browser) return
 		const q = S.text.trim()
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		goto(`?q=${encodeURIComponent(q)}`, {
 			replaceState: true,
 			noScroll: true,

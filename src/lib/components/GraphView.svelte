@@ -179,7 +179,7 @@
 
 <div class="relative mx-auto" style={`width:${width * scale}px; height:${height * scale}px`}>
 	<svg width={width * scale} height={height * scale}>
-		{#each edges as e}
+		{#each edges as e (e.from + "|" + e.to)}
 			{@const a = findNode(e.from)}
 			{@const b = findNode(e.to)}
 			{#if a && b}
@@ -195,7 +195,7 @@
 		{/each}
 	</svg>
 
-	{#each positionedNodes as n}
+	{#each positionedNodes as n (n.id)}
 		{@const stateClass =
 			n.diff === "root"
 				? "border-blue-600 bg-blue-50"
@@ -210,12 +210,12 @@
 			<div class="font-semibold">{n.label}</div>
 
 			<div class="flex gap-1 text-xs">
-				{#each n.colors as c}
+				{#each n.colors as c (c)}
 					<span>{c}</span>
 				{/each}
 
 				{#if n.removedColors}
-					{#each n.removedColors as c}
+					{#each n.removedColors as c (c)}
 						<span class="line-through opacity-40">{c}</span>
 					{/each}
 				{/if}
