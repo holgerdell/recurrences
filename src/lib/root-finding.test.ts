@@ -14,7 +14,14 @@ import {
 	type Root
 } from "./root-finding"
 
-// Helper for floating comparisons (non-integer roots)
+/**
+ * Helper predicate for comparing floating-point roots within an epsilon tolerance.
+ *
+ * @param a - First numeric value.
+ * @param b - Second numeric value.
+ * @param eps - Maximum tolerated absolute difference.
+ * @returns True when the values are approximately equal.
+ */
 const almostEqual = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) < eps
 
 // ======================================================

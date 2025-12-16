@@ -11,6 +11,14 @@ import { initGLPK } from "$lib/glpk-instance"
 
 await initGLPK()
 
+/**
+ * Helper predicate for comparing floating point values in the tests.
+ *
+ * @param a - First numeric value.
+ * @param b - Second numeric value.
+ * @param eps - Maximum tolerated absolute difference.
+ * @returns True when the numbers are within epsilon.
+ */
 const almostEqual = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) < eps
 
 describe("IDENTIFIER_PATTERN", () => {
@@ -333,6 +341,13 @@ describe("formatRecurrences", () => {
 	})
 })
 
+/**
+ * Logs LP diagnostic information when a weighted-causality test fails expectations.
+ *
+ * @param name - Human-friendly label for the recurrence under test.
+ * @param dbg - Debug payload returned by `isWeightedCausal`.
+ * @returns Nothing; side-effects include console logging.
+ */
 const printDebug = (name: string, dbg: WeightedCausalDebug) => {
 	console.group(`Result for ${name}`)
 	console.log(`Feasible: ${dbg.feasible}`)

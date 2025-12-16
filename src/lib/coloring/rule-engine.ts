@@ -1,27 +1,25 @@
 import { SvelteMap, SvelteSet } from "svelte/reactivity"
 
-// ============================================================
-// Domain types
-// ============================================================
-export type Color = 1 | 2 | 3 | 4
+import type { Color, GraphEdge, GraphNode } from "./graph-utils"
+import { collectSpecialNeighbors, computeDegreeMap } from "./graph-utils"
+import {
+	ALL_LOCAL_SITUATIONS,
+	buildMissingRuleSnippets as buildMissingRuleSnippetsFromCanon,
+	canonicalizeLocalSituations
+} from "./canon"
+import type { CanonicalSituation } from "./canon"
+import { hasProperColoring } from "./proper-coloring"
 
-export interface GraphNode {
-	id: string
-	label: string
-	colors: readonly Color[]
-	diff?: "root" | "changed" | "unchanged"
-	removedColors?: readonly Color[]
-}
-
-export interface GraphEdge {
-	from: string
-	to: string
-}
-
+/**
+ * Represents a single branch within a rule, mapping vertex ids to new color lists.
+ */
 export interface Branch {
 	assignments: Record<string, readonly Color[]>
 }
 
+/**
+ * Declares the structure of a branching rule, including visualization metadata.
+ */
 export interface BranchingRule {
 	name: string
 	description: string
@@ -34,6 +32,9 @@ export interface BranchingRule {
 	branches: Branch[]
 }
 
+/**
+ * Captures the effect of applying a single branch, including measures and colorability.
+ */
 export interface BranchAnalysis {
 	after: { nodes: GraphNode[]; edges: GraphEdge[] }
 	measureAfter: Measure
@@ -41,6 +42,9 @@ export interface BranchAnalysis {
 	hasColoring: boolean
 }
 
+/**
+ * Summarizes analyzer output for an entire rule and its recurrence impact.
+ */
 export interface RuleAnalysis {
 	measureBefore: Measure
 	beforeHasColoring: boolean
@@ -50,25 +54,28 @@ export interface RuleAnalysis {
 	weightVector?: WeightVector | null
 	solverDisplay?: string
 	solverEquation?: string
-	customSolution?: string | null
+	customSolution?: string
 }
 
+/**
+ * Two-component measure tracking how many degree-qualified vertices have 3 or 2 colors.
+ */
 export interface Measure {
 	n3: number
 	n2: number
 }
 
+/**
+ * Weight assignment used to project two-dimensional measures into a scalar recurrence.
+ */
 export interface WeightVector {
 	w3: number
 	w2: number
 }
 
-export interface CanonicalSituation {
-	signature: string
-	nodes: GraphNode[]
-	edges: GraphEdge[]
-}
-
+/**
+ * Report describing whether a rule set covers every canonical situation.
+ */
 export interface ExhaustivenessReport {
 	exhaustive: boolean
 	missing: CanonicalSituation[]
@@ -77,71 +84,24 @@ export interface ExhaustivenessReport {
 	totalSituations: number
 }
 
-// ============================================================
-// Canonicalization + exhaustive situation generation
-// ============================================================
-const COLOR_LIST_OPTIONS: readonly (readonly Color[])[] = [
-	[1, 2],
-	[1, 3],
-	[2, 3],
-	[1, 2, 3]
-] as const
-
-const NEIGHBOR_PERMUTATIONS: readonly [number, number, number][] = [
-	[0, 1, 2],
-	[0, 2, 1],
-	[1, 0, 2],
-	[1, 2, 0],
-	[2, 0, 1],
-	[2, 1, 0]
-] as const
-
-function normalizeColors(colors: readonly Color[]): readonly Color[] {
-	return Array.from(new SvelteSet(colors)).sort((a, b) => a - b) as readonly Color[]
-}
-
-function listsEqual(lhs: readonly Color[], rhs: readonly Color[]) {
-	if (lhs.length !== rhs.length) return false
-	for (let i = 0; i < lhs.length; i++) {
-		if (lhs[i] !== rhs[i]) return false
-	}
-	return true
-}
-
-function neighborKeyMatchesRoot(neighborLists: readonly (readonly Color[])[], rootKey: string) {
-	return neighborLists.some((colors) => colors.length === 2 && colorsToKey(colors) === rootKey)
-}
-
-function buildBranchesFromRoot(colors: readonly Color[]) {
-	return colors.map((color) => ({
-		assignments: { v: [color] as readonly Color[] }
-	}))
-}
-
-function formatColorsLiteral(colors: readonly Color[]) {
-	return `[${colors.join(", ")}]`
-}
-
-function formatNodeLiteral(node: GraphNode) {
-	return `{ id: "${node.id}", label: "${node.label}", colors: ${formatColorsLiteral(node.colors)} }`
-}
-
-function formatEdgeLiteral(edge: GraphEdge) {
-	return `{ from: "${edge.from}", to: "${edge.to}" }`
-}
-
-function formatAssignmentsLiteral(assignments: Record<string, readonly Color[]>) {
-	const entries = Object.entries(assignments)
-		.sort(([a], [b]) => a.localeCompare(b))
-		.map(([id, colors]) => `${id}: ${formatColorsLiteral(colors)}`)
-	return `{ ${entries.join(", ")} }`
-}
-
+/**
+ * Produces a human-readable fragment describing a single vertex assignment.
+ *
+ * @param id - Vertex identifier being described.
+ * @param colors - Colors remaining on that vertex within the branch.
+ * @returns Text such as "v = 1" or "v ∈ {1,2}".
+ */
 function describeSingleAssignment(id: string, colors: readonly Color[]) {
 	if (colors.length === 1) return `${id} = ${colors[0]}`
 	return `${id} ∈ {${colors.join(", ")}}`
 }
 
+/**
+ * Formats a full assignment map into a sorted comma-separated description.
+ *
+ * @param assignments - Mapping from vertex id to remaining colors.
+ * @returns Narrative description used inside UI tooltips.
+ */
 export function describeAssignments(assignments: Record<string, readonly Color[]>) {
 	const entries = Object.entries(assignments)
 		.sort(([a], [b]) => a.localeCompare(b))
@@ -149,263 +109,28 @@ export function describeAssignments(assignments: Record<string, readonly Color[]
 	return entries.join(", ")
 }
 
-function formatBranchLiteral(assignments: Record<string, readonly Color[]>) {
-	return `{ assignments: ${formatAssignmentsLiteral(assignments)} }`
-}
-
+/**
+ * Formats a linear measure term, omitting coefficients of zero and simplifying ones.
+ *
+ * @param coefficient - Numeric weight applied to the label.
+ * @param label - Symbol such as `n₃` or `n₂`.
+ * @returns Display string or null when the term vanishes.
+ */
 function formatMeasureTerm(coefficient: number, label: string) {
 	if (coefficient === 0) return null
 	return coefficient === 1 ? label : `${coefficient}·${label}`
 }
 
-function appendLiterals(lines: string[], items: readonly string[], indent: string) {
-	items.forEach((literal, index) => {
-		const suffix = index === items.length - 1 ? "" : ","
-		lines.push(`${indent}${literal}${suffix}`)
-	})
-}
-
-function formatBranchingRuleTemplate(situation: CanonicalSituation, index: number) {
-	const rootNode = situation.nodes.find((node) => node.id === "v") ?? situation.nodes[0]
-	if (!rootNode || (rootNode.colors.length !== 2 && rootNode.colors.length !== 3)) return null
-	const branches = buildBranchesFromRoot(rootNode.colors)
-	const nodeLines = situation.nodes.map((node) => formatNodeLiteral(node))
-	const edgeLines = situation.edges.map((edge) => formatEdgeLiteral(edge))
-	const branchLines = branches.map((branch) => formatBranchLiteral(branch.assignments))
-	const lines: string[] = []
-	lines.push("{")
-	lines.push(`  name: "Generated rule ${index + 1}",`)
-	lines.push(`  description: "Auto-generated for missing signature ${situation.signature}",`)
-	lines.push('  root: "v",')
-	lines.push('  focus: ["v"],')
-	lines.push("  before: {")
-	lines.push("    nodes: [")
-	appendLiterals(lines, nodeLines, "      ")
-	lines.push("    ],")
-	lines.push("    edges: [")
-	appendLiterals(lines, edgeLines, "      ")
-	lines.push("    ]")
-	lines.push("  },")
-	lines.push("  branches: [")
-	appendLiterals(lines, branchLines, "    ")
-	lines.push("  ]")
-	lines.push("}")
-	return lines.join("\n")
-}
-
-function isEligibleList(colors: readonly Color[]) {
-	return colors.length === 2 || colors.length === 3
-}
-
-function colorsToKey(colors: readonly Color[]) {
-	return colors.join("")
-}
-
-function buildAdjacencyMap(nodes: GraphNode[], edges: GraphEdge[]) {
-	const adjacency = new SvelteMap<string, SvelteSet<string>>()
-	for (const node of nodes) adjacency.set(node.id, new SvelteSet())
-	for (const edge of edges) {
-		if (!adjacency.has(edge.from) || !adjacency.has(edge.to)) continue
-		adjacency.get(edge.from)?.add(edge.to)
-		adjacency.get(edge.to)?.add(edge.from)
-	}
-	return adjacency
-}
-
-function createSignature(
-	colorStrings: readonly string[],
-	adjacencyMatrix: boolean[][],
-	order: readonly number[]
-) {
-	const colorPart = order.map((index) => colorStrings[index]).join("|")
-	const edges: string[] = []
-	for (let i = 0; i < order.length; i++) {
-		for (let j = i + 1; j < order.length; j++) {
-			edges.push(adjacencyMatrix[order[i]][order[j]] ? "1" : "0")
-		}
-	}
-	return `${colorPart}:${edges.join("")}`
-}
-
-function buildCanonicalNodes(
-	rootColors: readonly Color[],
-	neighborColors: readonly (readonly Color[])[],
-	permutation: readonly number[]
-) {
-	const labels = ["v", "a", "b", "c"] as const
-	const orderedNeighbors = permutation.map((index) => neighborColors[index])
-	const nodes: GraphNode[] = [
-		{ id: labels[0], label: labels[0], colors: [...rootColors] as readonly Color[] }
-	]
-	orderedNeighbors.forEach((colors, idx) => {
-		nodes.push({
-			id: labels[idx + 1],
-			label: labels[idx + 1],
-			colors: [...colors] as readonly Color[]
-		})
-	})
-	return nodes
-}
-
-function buildCanonicalEdges(adjacencyMatrix: boolean[][], permutation: readonly number[]) {
-	const labels = ["v", "a", "b", "c"] as const
-	const order = [0, permutation[0] + 1, permutation[1] + 1, permutation[2] + 1]
-	const edges: GraphEdge[] = []
-	for (let i = 0; i < labels.length; i++) {
-		for (let j = i + 1; j < labels.length; j++) {
-			if (adjacencyMatrix[order[i]][order[j]]) edges.push({ from: labels[i], to: labels[j] })
-		}
-	}
-	return edges
-}
-
-function buildAdjacencyMatrix(
-	nodeIds: readonly string[],
-	adjacency: SvelteMap<string, SvelteSet<string>>
-) {
-	const size = nodeIds.length
-	const matrix = Array.from({ length: size }, () => Array<boolean>(size).fill(false))
-	const lookup = new SvelteMap<string, number>()
-	nodeIds.forEach((id, idx) => lookup.set(id, idx))
-	for (let i = 0; i < size; i++) {
-		const neighbors = adjacency.get(nodeIds[i])
-		if (!neighbors) continue
-		for (const neighborId of neighbors) {
-			const j = lookup.get(neighborId)
-			if (j === undefined) continue
-			matrix[i][j] = true
-		}
-	}
-	return matrix
-}
-
-function canonicalizeSubset(
-	rootNode: GraphNode,
-	neighborIds: readonly string[],
-	nodeLookup: SvelteMap<string, GraphNode>,
-	adjacency: SvelteMap<string, SvelteSet<string>>
-): CanonicalSituation | null {
-	if (neighborIds.length !== 3) return null
-	const neighborNodes = neighborIds
-		.map((id) => nodeLookup.get(id))
-		.filter((node): node is GraphNode => Boolean(node))
-	if (neighborNodes.length !== 3) return null
-	const rootColors = normalizeColors(rootNode.colors)
-	const neighborColors = neighborNodes.map((node) => normalizeColors(node.colors))
-	if (
-		rootColors.length === 2 &&
-		neighborColors.some((colors) => colors.length === 2 && listsEqual(colors, rootColors))
-	) {
-		return null
-	}
-	const nodeIds = [rootNode.id, ...neighborIds]
-	const adjacencyMatrix = buildAdjacencyMatrix(nodeIds, adjacency)
-	const colorStrings = [rootColors, ...neighborColors].map((colors) => colorsToKey(colors))
-	let bestSignature = ""
-	let bestPermutation = NEIGHBOR_PERMUTATIONS[0]
-	for (const permutation of NEIGHBOR_PERMUTATIONS) {
-		const order = [0, permutation[0] + 1, permutation[1] + 1, permutation[2] + 1]
-		const signature = createSignature(colorStrings, adjacencyMatrix, order)
-		if (bestSignature === "" || signature < bestSignature) {
-			bestSignature = signature
-			bestPermutation = permutation
-		}
-	}
-	return {
-		signature: bestSignature,
-		nodes: buildCanonicalNodes(rootColors, neighborColors, bestPermutation),
-		edges: buildCanonicalEdges(adjacencyMatrix, bestPermutation)
-	}
-}
-
-function combinations<T>(items: readonly T[], k: number) {
-	const results: T[][] = []
-	if (k === 0) {
-		results.push([])
-		return results
-	}
-	const current: T[] = []
-	const backtrack = (index: number, remaining: number) => {
-		if (remaining === 0) {
-			results.push([...current])
-			return
-		}
-		for (let i = index; i <= items.length - remaining; i++) {
-			current.push(items[i])
-			backtrack(i + 1, remaining - 1)
-			current.pop()
-		}
-	}
-	backtrack(0, k)
-	return results
-}
-
-function canonicalizeLocalSituations(nodes: GraphNode[], edges: GraphEdge[], rootId: string) {
-	const nodeLookup = new SvelteMap(nodes.map((node) => [node.id, node] as const))
-	const rootNode = nodeLookup.get(rootId)
-	if (!rootNode || !isEligibleList(rootNode.colors)) return []
-	const adjacency = buildAdjacencyMap(nodes, edges)
-	const eligibleNeighbors = Array.from(adjacency.get(rootId) ?? []).filter((neighborId) => {
-		const node = nodeLookup.get(neighborId)
-		return Boolean(node && isEligibleList(node?.colors ?? []))
-	})
-	if (eligibleNeighbors.length < 3) return []
-	const seen = new SvelteSet<string>()
-	const results: CanonicalSituation[] = []
-	for (const subset of combinations(eligibleNeighbors, 3)) {
-		const canonical = canonicalizeSubset(rootNode, subset, nodeLookup, adjacency)
-		if (!canonical) continue
-		if (seen.has(canonical.signature)) continue
-		seen.add(canonical.signature)
-		results.push(canonical)
-	}
-	return results
-}
-
-function generateAllLocalSituations() {
-	const seen = new SvelteMap<string, CanonicalSituation>()
-	for (const rootColors of COLOR_LIST_OPTIONS) {
-		const normalizedRoot = normalizeColors(rootColors)
-		const rootKey = colorsToKey(normalizedRoot)
-		const rootHasTwoColors = normalizedRoot.length === 2
-		for (const firstNeighbor of COLOR_LIST_OPTIONS) {
-			for (const secondNeighbor of COLOR_LIST_OPTIONS) {
-				for (const thirdNeighbor of COLOR_LIST_OPTIONS) {
-					const neighborNormalized = [
-						normalizeColors(firstNeighbor),
-						normalizeColors(secondNeighbor),
-						normalizeColors(thirdNeighbor)
-					]
-					const neighborKeys = neighborNormalized.map((colors) => colorsToKey(colors))
-					if (new SvelteSet(neighborKeys).size !== neighborKeys.length) continue
-					if (rootHasTwoColors && neighborKeyMatchesRoot(neighborNormalized, rootKey)) continue
-					const nodes: GraphNode[] = [
-						{ id: "root", label: "v", colors: rootColors },
-						{ id: "n0", label: "u₁", colors: firstNeighbor },
-						{ id: "n1", label: "u₂", colors: secondNeighbor },
-						{ id: "n2", label: "u₃", colors: thirdNeighbor }
-					]
-					const edges: GraphEdge[] = [
-						{ from: "root", to: "n0" },
-						{ from: "root", to: "n1" },
-						{ from: "root", to: "n2" }
-					]
-					const canonicalSituations = canonicalizeLocalSituations(nodes, edges, "root")
-					for (const situation of canonicalSituations) {
-						if (!seen.has(situation.signature)) seen.set(situation.signature, situation)
-					}
-				}
-			}
-		}
-	}
-	return Array.from(seen.values())
-}
-
-const ALL_LOCAL_SITUATIONS = generateAllLocalSituations()
-
 // ============================================================
 // Apply branch + compute diffs
 // ============================================================
+/**
+ * Applies branch assignments to the rule’s before-state and annotates node diffs.
+ *
+ * @param rule - Branching rule providing the baseline context.
+ * @param branch - Specific branch assignments to apply.
+ * @returns New node and edge arrays reflecting constraint propagation.
+ */
 function applyBranchWithDiff(
 	rule: BranchingRule,
 	branch: Branch
@@ -594,65 +319,14 @@ function applyBranchWithDiff(
 	}
 }
 
-function computeDegreeMap(nodes: GraphNode[], edges: GraphEdge[]) {
-	const degrees = new SvelteMap<string, number>()
-	for (const node of nodes) degrees.set(node.id, 0)
-	for (const edge of edges) {
-		degrees.set(edge.from, (degrees.get(edge.from) ?? 0) + 1)
-		degrees.set(edge.to, (degrees.get(edge.to) ?? 0) + 1)
-	}
-	return degrees
-}
-
-function collectSpecialNeighbors(focus: readonly string[], edges: GraphEdge[]) {
-	const focusSet = new SvelteSet(focus)
-	const special = new SvelteSet<string>()
-	for (const edge of edges) {
-		if (focusSet.has(edge.from)) special.add(edge.to)
-		if (focusSet.has(edge.to)) special.add(edge.from)
-	}
-	return special
-}
-
-function hasProperColoring(nodes: GraphNode[], edges: GraphEdge[]): boolean {
-	if (nodes.length === 0) return true
-
-	const adjacency = new SvelteMap<string, string[]>()
-	for (const node of nodes) adjacency.set(node.id, [])
-	for (const edge of edges) {
-		adjacency.get(edge.from)?.push(edge.to)
-		adjacency.get(edge.to)?.push(edge.from)
-	}
-
-	const ordered = [...nodes].sort((a, b) => a.colors.length - b.colors.length)
-	const assignment = new SvelteMap<string, Color>()
-
-	function backtrack(index: number): boolean {
-		if (index === ordered.length) return true
-		const node = ordered[index]
-		if (node.colors.length === 0) return false
-
-		for (const color of node.colors) {
-			let conflict = false
-			for (const neighbor of adjacency.get(node.id) ?? []) {
-				if (assignment.get(neighbor) === color) {
-					conflict = true
-					break
-				}
-			}
-			if (conflict) continue
-
-			assignment.set(node.id, color)
-			if (backtrack(index + 1)) return true
-			assignment.delete(node.id)
-		}
-
-		return false
-	}
-
-	return backtrack(0)
-}
-
+/**
+ * Computes the (n₃, n₂) measure for vertices with degree ≥ 3 or adjacent to the focus set.
+ *
+ * @param nodes - Graph nodes to evaluate.
+ * @param edges - Graph edges for degree and neighbor calculations.
+ * @param focus - Root ids whose neighbors always qualify.
+ * @returns Measure counting qualifying 3-color and 2-color vertices.
+ */
 function computeMeasure(nodes: GraphNode[], edges: GraphEdge[], focus: readonly string[]): Measure {
 	const degrees = computeDegreeMap(nodes, edges)
 	const specialNeighbors = collectSpecialNeighbors(focus, edges)
@@ -669,6 +343,12 @@ function computeMeasure(nodes: GraphNode[], edges: GraphEdge[], focus: readonly 
 	)
 }
 
+/**
+ * Builds TeX-like and plain recurrence strings summarizing the branch measure drops.
+ *
+ * @param deltas - Measure deltas for each branch.
+ * @returns Display string and compact equation form.
+ */
 function buildRecurrenceStrings(deltas: Measure[]) {
 	interface CountedDelta {
 		key: string
@@ -703,10 +383,23 @@ function buildRecurrenceStrings(deltas: Measure[]) {
 	return { display, equation }
 }
 
+/**
+ * Checks whether a given weight vector yields strictly positive drops for all branches.
+ *
+ * @param deltas - Measure deltas per branch.
+ * @param weights - Candidate weights applied to (n₃, n₂).
+ * @returns True when every weighted drop is positive.
+ */
 function isValidWeightVector(deltas: Measure[], weights: WeightVector) {
 	return deltas.every((delta) => weights.w3 * delta.n3 + weights.w2 * delta.n2 > 0)
 }
 
+/**
+ * Searches a small integer grid for a weight vector that validates all deltas.
+ *
+ * @param deltas - Measure deltas per branch.
+ * @returns Discovered weight vector or null when none work within bounds.
+ */
 function findWeightVector(deltas: Measure[]): WeightVector | null {
 	const preferred: WeightVector = { w3: 1, w2: 1 }
 	if (isValidWeightVector(deltas, preferred)) return preferred
@@ -721,6 +414,13 @@ function findWeightVector(deltas: Measure[]): WeightVector | null {
 	return null
 }
 
+/**
+ * Projects the measure deltas onto a scalar recurrence using the supplied weights.
+ *
+ * @param deltas - Measure drops for each branch.
+ * @param weights - Weight vector defining the scalar measure.
+ * @returns Display/equation strings plus the list of drops.
+ */
 function buildWeightedScalarRecurrence(
 	deltas: Measure[],
 	weights: WeightVector
@@ -750,6 +450,13 @@ function buildWeightedScalarRecurrence(
 	return { display, equation, drops }
 }
 
+/**
+ * Computes the greatest common divisor of two integers, guarding against zeros.
+ *
+ * @param a - First integer value.
+ * @param b - Second integer value.
+ * @returns Nonzero gcd so lambda ratios stay simplified.
+ */
 function gcdInt(a: number, b: number) {
 	let x = Math.abs(a)
 	let y = Math.abs(b)
@@ -763,6 +470,13 @@ function gcdInt(a: number, b: number) {
 	return x || 1
 }
 
+/**
+ * Formats the tail argument used in invariant solutions after eliminating n₃.
+ *
+ * @param numerator - Numerator of the lambda ratio.
+ * @param denominator - Denominator of the lambda ratio.
+ * @returns String such as "n₂ + (1/2)·n₃".
+ */
 function formatLambdaTail(numerator: number, denominator: number) {
 	if (numerator === 0) return "n₂"
 	const sign = numerator > 0 ? "+" : "-"
@@ -774,6 +488,12 @@ function formatLambdaTail(numerator: number, denominator: number) {
 	return `n₂ ${sign} ${term}`
 }
 
+/**
+ * Finds the exponential growth factor implied by n₃-only drops, if any.
+ *
+ * @param entries - Tuples of drop size and multiplicity.
+ * @returns Dominant base or null when the search fails.
+ */
 function findN3OnlyGrowthBase(entries: Array<[number, number]>) {
 	if (entries.length === 0) return null
 	const evaluate = (r: number) =>
@@ -802,9 +522,15 @@ function findN3OnlyGrowthBase(entries: Array<[number, number]>) {
 	return result
 }
 
-function buildN3OnlyInvariantSolution(deltas: Measure[]): string | null {
-	if (deltas.length === 0) return null
-	if (!deltas.every((delta) => delta.n3 > 0)) return null
+/**
+ * Constructs an invariant text when every branch drops only the n₃ component.
+ *
+ * @param deltas - Measure deltas for each branch.
+ * @returns Human-readable invariant summary or undefined if not applicable.
+ */
+function buildN3OnlyInvariantSolution(deltas: Measure[]): string | undefined {
+	if (deltas.length === 0) return
+	if (!deltas.every((delta) => delta.n3 > 0)) return
 	const dropCounts = new SvelteMap<number, number>()
 	for (const delta of deltas) {
 		dropCounts.set(delta.n3, (dropCounts.get(delta.n3) ?? 0) + 1)
@@ -822,8 +548,15 @@ function buildN3OnlyInvariantSolution(deltas: Measure[]): string | null {
 	return `n₃-only invariant: ${recurrence} ⇒ O(${formatted}^{n₃})`
 }
 
-function deriveInvariantSolution(branchCount: number, deltas: Measure[]): string | null {
-	if (branchCount === 0 || deltas.length === 0) return null
+/**
+ * Attempts to derive a closed-form invariant solution when all drops are identical.
+ *
+ * @param branchCount - Number of branches in the rule.
+ * @param deltas - Measure deltas per branch.
+ * @returns Solution text or undefined when no closed form is found.
+ */
+function deriveInvariantSolution(branchCount: number, deltas: Measure[]): string | undefined {
+	if (branchCount === 0 || deltas.length === 0) return
 	const [first, ...rest] = deltas
 	const identicalDrops =
 		first.n3 > 0 && rest.every((delta) => delta.n3 === first.n3 && delta.n2 === first.n2)
@@ -832,7 +565,7 @@ function deriveInvariantSolution(branchCount: number, deltas: Measure[]): string
 		const dropN2 = first.n2
 		const lambdaNumerator = -dropN2
 		const lambdaDenominator = dropN3
-		if (!Number.isFinite(lambdaNumerator) || !Number.isFinite(lambdaDenominator)) return null
+		if (!Number.isFinite(lambdaNumerator) || !Number.isFinite(lambdaDenominator)) return
 		const gcd = gcdInt(lambdaNumerator, lambdaDenominator)
 		const normalizedNumerator = lambdaNumerator / gcd
 		const normalizedDenominator = lambdaDenominator / gcd
@@ -844,6 +577,12 @@ function deriveInvariantSolution(branchCount: number, deltas: Measure[]): string
 	return buildN3OnlyInvariantSolution(deltas)
 }
 
+/**
+ * Runs the full analyzer on a rule: applies each branch, measures deltas, and builds recurrences.
+ *
+ * @param rule - Branching rule to analyze.
+ * @returns Detailed analysis including measure drops, solver text, and invariants.
+ */
 export function analyzeRule(rule: BranchingRule): RuleAnalysis {
 	const focus = rule.focus ?? [rule.root]
 	const measureBefore = computeMeasure(rule.before.nodes, rule.before.edges, focus)
@@ -888,10 +627,22 @@ export function analyzeRule(rule: BranchingRule): RuleAnalysis {
 	}
 }
 
+/**
+ * Convenience helper that analyzes a batch of rules sequentially.
+ *
+ * @param rulesToAnalyze - Rules queued for analysis.
+ * @returns Array of rule analysis results in the same order as input.
+ */
 export function analyzeRules(rulesToAnalyze: BranchingRule[]): RuleAnalysis[] {
 	return rulesToAnalyze.map((rule) => analyzeRule(rule))
 }
 
+/**
+ * Checks whether the provided rule set covers every canonical local situation.
+ *
+ * @param rulesToCheck - Rules evaluated for signature coverage.
+ * @returns Exhaustiveness report summarizing coverage counts and missing signatures.
+ */
 export function testBranchingRuleExhaustiveness(
 	rulesToCheck: BranchingRule[]
 ): ExhaustivenessReport {
@@ -914,8 +665,12 @@ export function testBranchingRuleExhaustiveness(
 	}
 }
 
+/**
+ * Generates code snippets for missing signatures using the canonical generator.
+ *
+ * @param report - Exhaustiveness report whose missing list will be converted.
+ * @returns Array of snippet strings ready to paste into the rules file.
+ */
 export function buildMissingRuleSnippets(report: ExhaustivenessReport) {
-	return report.missing
-		.map((situation, index) => formatBranchingRuleTemplate(situation, index))
-		.filter((snippet): snippet is string => Boolean(snippet))
+	return buildMissingRuleSnippetsFromCanon(report)
 }

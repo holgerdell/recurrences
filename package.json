@@ -14,6 +14,7 @@
 		"lint": "prettier --check . && eslint ."
 	},
 	"devDependencies": {
+		"@castlabs/prettier-tsdoc-plugin": "^0.5.7",
 		"@eslint/compat": "^2.0.0",
 		"@eslint/js": "^9.39.1",
 		"@sveltejs/adapter-auto": "^7.0.0",

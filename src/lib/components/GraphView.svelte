@@ -1,25 +1,6 @@
 <script lang="ts">
+	import type { GraphNode, GraphEdge } from "$lib/coloring/graph-utils"
 	import { SvelteMap, SvelteSet } from "svelte/reactivity"
-
-	// ============================================================
-	// Types
-	// ============================================================
-	export type Color = 1 | 2 | 3 | 4
-
-	export interface GraphNode {
-		id: string
-		label: string
-		colors: readonly Color[]
-
-		// --- diff annotations (optional) ---
-		diff?: "root" | "changed" | "unchanged"
-		removedColors?: readonly Color[]
-	}
-
-	export interface GraphEdge {
-		from: string
-		to: string
-	}
 
 	// ============================================================
 	// Props

@@ -4,12 +4,12 @@
 // ======================================================
 
 /**
- * Product of variables raised to powers, e.g. x^2·y^3
+ * Product of variables raised to powers, e.g. x^2·y^3.
  */
 export type Monomial = Record<string, number>
 
 /**
- * A single polynomial term: coefficient * monomial
+ * A single polynomial term: coefficient × monomial.
  */
 export interface PolynomialTerm {
 	coefficient: number
@@ -17,8 +17,7 @@ export interface PolynomialTerm {
 }
 
 /**
- * A multivariate polynomial implicitly equal to 0:
- * Σ_i (c_i · ∏_v v^{p_i,v}) = 0
+ * Multivariate polynomial implicitly equal to 0: Σ_i (c_i · ∏_v v^{p_i,v}) = 0.
  */
 export interface Polynomial {
 	terms: PolynomialTerm[]
@@ -26,7 +25,7 @@ export interface Polynomial {
 }
 
 /**
- * A system of polynomial equations, all equal to 0
+ * Collection of zero-equality polynomials sharing a variable set.
  */
 export interface PolynomialSystem {
 	polynomials: Polynomial[]
@@ -34,7 +33,7 @@ export interface PolynomialSystem {
 }
 
 /**
- * Root: a mapping from variable name → positive real number
+ * Mapping from variable name to positive real number describing a solution.
  */
 export type Root = Record<string, number>
 
@@ -42,18 +41,37 @@ export type Root = Record<string, number>
 //   Numeric helpers
 // ======================================================
 
+/**
+ * Snaps numbers close to an integer to that integer to avoid floating noise.
+ *
+ * @param val - Input value to snap.
+ * @param eps - Acceptable deviation from the nearest integer.
+ * @returns Snapped value or the original when outside epsilon.
+ */
 export function snapInt(val: number, eps = 1e-6): number {
 	if (!Number.isFinite(val)) return val
 	const i = Math.round(val)
 	return Math.abs(val - i) < eps ? i : val
 }
 
+/**
+ * Formats numbers to four decimals while trimming trailing zeros.
+ *
+ * @param x - Value to format.
+ * @returns Human-readable numeric string.
+ */
 export function formatNumber(x: number): string {
 	if (!Number.isFinite(x)) return String(x)
 	const roundedUp = Math.ceil(x * 1e4) / 1e4
 	return roundedUp.toFixed(4).replace(/\.?0+$/, "")
 }
 
+/**
+ * Converts solved root mappings into a big-O monomial string.
+ *
+ * @param root - Root map, null, or the sentinel "divergent".
+ * @returns Big-O formatted string or an empty string when unsolved.
+ */
 export function formatAsymptotics(root: Root | null | "divergent"): string {
 	if (!root) return ""
 	if (root === "divergent") return "divergent"
@@ -66,7 +84,8 @@ export function formatAsymptotics(root: Root | null | "divergent"): string {
 
 /**
  * Format the characteristic polynomials of a system as readable strings, e.g. "1 - 2*x^-1 = 0".
- * @param system Polynomial equation system
+ *
+ * @param system - Polynomial equation system
  * @returns List of formatted polynomial strings
  */
 export function formatCharacteristicPolynomials(system: PolynomialSystem): string[] {
@@ -106,7 +125,11 @@ export function formatCharacteristicPolynomials(system: PolynomialSystem): strin
 // ======================================================
 
 /**
- * Evaluates a single monomial given variable values.
+ * Evaluates a single monomial given variable assignments.
+ *
+ * @param m - Map of variables to exponents.
+ * @param vars - Variable values used for evaluation.
+ * @returns Numeric value of the monomial or NaN if any variable is invalid.
  */
 export function evaluateMonomial(m: Monomial, vars: Root): number {
 	let val = 1
@@ -119,7 +142,11 @@ export function evaluateMonomial(m: Monomial, vars: Root): number {
 }
 
 /**
- * Evaluates the polynomial under a given assignment.
+ * Computes the polynomial value for a particular assignment.
+ *
+ * @param poly - Polynomial definition containing terms.
+ * @param vars - Variable values used for evaluation.
+ * @returns Sum of coefficient × monomial evaluations.
  */
 export function evaluatePolynomial(poly: Polynomial, vars: Root): number {
 	let sum = 0
@@ -131,7 +158,11 @@ export function evaluatePolynomial(poly: Polynomial, vars: Root): number {
 }
 
 /**
- * Computes the absolute residual for a system under given roots.
+ * Computes the maximum absolute residual across all polynomials for given roots.
+ *
+ * @param system - Polynomial system being satisfied.
+ * @param roots - Candidate solution values.
+ * @returns Largest absolute error across equations.
  */
 export function systemResidual(system: PolynomialSystem, roots: Root): number {
 	let maxErr = 0
@@ -147,8 +178,12 @@ export function systemResidual(system: PolynomialSystem, roots: Root): number {
 // ======================================================
 
 /**
- * Finds a positive real solution of f(x) = 0 between bounds.
- * Returns null if no root found.
+ * Finds a positive real solution of f(x)=0 within the supplied bounds using expansion + bisection.
+ *
+ * @param f - Function whose roots are sought.
+ * @param loInit - Initial lower bound.
+ * @param hiInit - Initial upper bound.
+ * @returns Positive root, Infinity for monotone divergence, or null when unsolved.
  */
 function findPositiveRoot(f: (x: number) => number, loInit = 0.0001, hiInit = 10): number | null {
 	let lo = loInit
@@ -191,8 +226,10 @@ function findPositiveRoot(f: (x: number) => number, loInit = 0.0001, hiInit = 10
 }
 
 /**
- * Attempts to solve a 2‑variable polynomial equation assuming symmetric behavior (x = y)
- * or by fixing one variable and solving the other.
+ * Attempts to solve a 2-variable polynomial either via symmetric substitution or 1D slices.
+ *
+ * @param poly - Two-variable polynomial to solve.
+ * @returns Root map when a solution is found, otherwise null.
  */
 function solve2DPolynomial(poly: Polynomial): Root | null {
 	if (poly.variables.length !== 2) return null
@@ -227,8 +264,11 @@ function solve2DPolynomial(poly: Polynomial): Root | null {
 // ======================================================
 
 /**
- * Attempts to find dominant (largest positive real) roots satisfying the given polynomial system.
- * Performs a single consistency check at the end and returns O(1) for constant systems.
+ * Finds dominant positive real roots for the given polynomial system via progressive elimination.
+ *
+ * @param system - Polynomial system derived from recurrences.
+ * @param ACCEPTABLE_ERROR - Maximum residual tolerated before rejecting a solution.
+ * @returns Root map when solved, or null when no consistent assignment is found.
  */
 export function dominantRoot(system: PolynomialSystem, ACCEPTABLE_ERROR = 1e-8): Root | null {
 	// --- Empty or constant system → O(1) case ---

@@ -1,5 +1,8 @@
 import { browser } from "$app/environment"
 
+/**
+ * Configuration for creating a localStorage-backed reactive state wrapper.
+ */
 export interface LocalStorageStateOptions<T> {
 	key: string
 	defaultValue: T
@@ -15,6 +18,9 @@ export interface LocalStorageStateOptions<T> {
 	storage?: Storage
 }
 
+/**
+ * Minimal Svelte-friendly API for reading and mutating persistent state.
+ */
 export interface LocalStorageState<T> {
 	value: T
 	set(value: T): void
@@ -22,6 +28,12 @@ export interface LocalStorageState<T> {
 	refresh(): void
 }
 
+/**
+ * Hooks component state up to localStorage while handling hydration, validation, and syncing.
+ *
+ * @param options - Local storage configuration including key, defaults, and hooks.
+ * @returns Reactive wrapper exposing the stored value and helper methods.
+ */
 export function useLocalStorageState<T>(
 	options: LocalStorageStateOptions<T>
 ): LocalStorageState<T> {

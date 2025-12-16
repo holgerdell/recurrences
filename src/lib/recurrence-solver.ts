@@ -19,6 +19,9 @@ import {
 //   Recurrence type definitions
 // ======================================================
 
+/**
+ * Parsed RHS entry, either a recursive function call with shifts or a constant term.
+ */
 export type Term =
 	| {
 			type: "function"
@@ -29,6 +32,9 @@ export type Term =
 	  }
 	| { type: "constant"; coef: number }
 
+/**
+ * Single recurrence equation storing the function name, arguments, and parsed terms.
+ */
 export type TermBasedRecurrence = {
 	func: string
 	vars: string[]
@@ -36,11 +42,19 @@ export type TermBasedRecurrence = {
 	fixedArgs?: (string | number)[]
 }
 
-/** A family of related recurrence relations for the same function. */
+/**
+ * Collection of term-based recurrences belonging to a single function family.
+ */
 export type Recurrence = TermBasedRecurrence[]
 
+/**
+ * Result emitted by the parser indicating either success with recurrences or an error message.
+ */
 export type ParseResult = { ok: true; recurrences: Recurrence } | { ok: false; error: string }
 
+/**
+ * Regex restricting function and variable identifiers to alphanumerics plus underscores.
+ */
 export const IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
 
 // ======================================================
@@ -48,10 +62,11 @@ export const IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
 // ======================================================
 
 /**
- * Snap a numeric value to the nearest integer when within a small epsilon.
- * Useful to normalize values that are essentially integers due to rounding.
- * @param val Value to snap
- * @param eps Maximum distance from an integer to allow snapping
+ * Snap a numeric value to the nearest integer when within a small epsilon. Useful to normalize
+ * values that are essentially integers due to rounding.
+ *
+ * @param val - Value to snap
+ * @param eps - Maximum distance from an integer to allow snapping
  * @returns Snapped value if close enough, otherwise the original value
  */
 export function snapIntVal(val: number, eps = 1e-6): number {
@@ -65,11 +80,11 @@ export function snapIntVal(val: number, eps = 1e-6): number {
 // ======================================================
 
 /**
- * Parse one or more recurrence relations into an internal representation.
- * Enforces a single function name and consistent arity across all lines.
- * Supports positive and negative shifts (e.g., n-2, n+1) and numeric fixed arguments.
- * Returns a structured error when the input is invalid.
- * @param lines Source lines containing recurrence equations
+ * Parse one or more recurrence relations into an internal representation. Enforces a single
+ * function name and consistent arity across all lines. Supports positive and negative shifts (e.g.,
+ * n-2, n+1) and numeric fixed arguments. Returns a structured error when the input is invalid.
+ *
+ * @param lines - Source lines containing recurrence equations
  * @returns Result with parsed recurrences or an error message
  */
 export function parseRecurrences(lines: string | string[]): ParseResult {
@@ -240,9 +255,10 @@ export function parseRecurrences(lines: string | string[]): ParseResult {
 // ======================================================
 
 /**
- * Pretty-print a parsed recurrence system back into readable equations.
- * Reconstructs shifts using +/- notation and combines terms with coefficients.
- * @param recurrences Parsed recurrence system
+ * Pretty-print a parsed recurrence system back into readable equations. Reconstructs shifts using
+ * +/- notation and combines terms with coefficients.
+ *
+ * @param recurrences - Parsed recurrence system
  * @returns Formatted equation string
  */
 export function formatRecurrences(recurrences: Recurrence): string {
@@ -272,9 +288,10 @@ export function formatRecurrences(recurrences: Recurrence): string {
 }
 
 /**
- * Convert a single term-based recurrence into its characteristic polynomial.
- * Uses argument deltas as monomial exponents and builds 1 − Σ(...) = 0.
- * @param rec Single recurrence to convert
+ * Convert a single term-based recurrence into its characteristic polynomial. Uses argument deltas
+ * as monomial exponents and builds 1 − Σ(...) = 0.
+ *
+ * @param rec - Single recurrence to convert
  * @returns Polynomial representing the characteristic equation
  */
 function recurrenceToPolynomial(rec: TermBasedRecurrence): Polynomial {
@@ -294,9 +311,10 @@ function recurrenceToPolynomial(rec: TermBasedRecurrence): Polynomial {
 }
 
 /**
- * Convert a recurrence system into a polynomial system.
- * Aggregates variables and characteristic polynomials for solving.
- * @param recurrences Parsed recurrence system
+ * Convert a recurrence system into a polynomial system. Aggregates variables and characteristic
+ * polynomials for solving.
+ *
+ * @param recurrences - Parsed recurrence system
  * @returns Polynomial system ready for dominant-root solving
  */
 export function recurrencesToPolynomialSystem(recurrences: Recurrence): PolynomialSystem {
@@ -313,6 +331,9 @@ export function recurrencesToPolynomialSystem(recurrences: Recurrence): Polynomi
 //   Solver wrapper
 // ======================================================
 
+/**
+ * Diagnostics emitted by the weighted-causality LP to explain feasibility and weights.
+ */
 export interface WeightedCausalDebug {
 	feasible: boolean
 	status: number
@@ -323,17 +344,12 @@ export interface WeightedCausalDebug {
 }
 
 /**
- * Weighted‑causality check using a linear‑program feasibility system.
+ * Uses an LP to determine whether every shift vector admits a positive weight certificate.
  *
- * LP formulation:
- *   minimize 0
- *   subject to:
- *     Σ_j shift_i[j] * w_j ≤ -ε   for all recursive shifts i
- *     Σ_j w_j = 1                 (normalization)
- *     w_j ≥ ε_min                 (strictly positive weights)
- *
- * Feasible → causal (non‑divergent)
- * Infeasible → divergent
+ * @param R - Parsed recurrence system under test.
+ * @param epsilon - Strict slack enforced on each constraint.
+ * @param epsilonMin - Minimum allowed weight component.
+ * @returns Diagnostic weights plus feasibility status.
  */
 export async function isWeightedCausal(
 	R: Recurrence,
@@ -474,9 +490,10 @@ export async function isWeightedCausal(
 }
 
 /**
- * Compute the dominant roots for a parsed recurrence system.
- * Delegates to the polynomial system solver to obtain growth rates.
- * @param recurrences Parsed recurrence system
+ * Compute the dominant roots for a parsed recurrence system. Delegates to the polynomial system
+ * solver to obtain growth rates.
+ *
+ * @param recurrences - Parsed recurrence system
  * @returns Map of variable names to dominant roots, or null when unsolved
  */
 export async function solveRecurrenceSystem(
@@ -491,9 +508,10 @@ export async function solveRecurrenceSystem(
 }
 
 /**
- * Parse and solve recurrences from raw strings and format the asymptotics.
- * Useful as a convenience wrapper for end-to-end usage.
- * @param lines Source lines containing recurrence equations
+ * Parse and solve recurrences from raw strings and format the asymptotics. Useful as a convenience
+ * wrapper for end-to-end usage.
+ *
+ * @param lines - Source lines containing recurrence equations
  * @returns Asymptotic big-O string or an error message
  */
 export async function solveRecurrencesFromStrings(lines: string): Promise<string> {

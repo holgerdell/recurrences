@@ -1,6 +1,8 @@
 import type { BranchingRule } from "./rule-engine"
 
-/** Branching rules for List 3-Coloring */
+/**
+ * Curated catalog of branching rules used by the coloring rule engine demo cases.
+ */
 export const rules: BranchingRule[] = [
 	{
 		name: "Degree ≥ 3, full list",

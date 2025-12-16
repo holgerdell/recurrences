@@ -1,10 +1,12 @@
 import GLPKConstructor, { type GLPK } from "glpk.js"
 
+/**
+ * Module-level cache of the GLPK instance so solver calls share one WASM/module load.
+ */
 let glpkInstance: GLPK | undefined
 
 /**
- * Pre-loads the correct GLPK build (async if browser, sync if Node/Bun)
- * Call this once at startup (await it) before any solver calls.
+ * Preloads the appropriate GLPK build (async in browser, sync in Node/Bun) exactly once per app.
  */
 export async function initGLPK() {
 	if (glpkInstance) return
@@ -19,7 +21,9 @@ export async function initGLPK() {
 	}
 }
 
-/** Returns the preloaded GLPK instance synchronously. */
+/**
+ * Returns the cached GLPK instance, throwing if `initGLPK` has not completed yet.
+ */
 export function getGLPK() {
 	if (!glpkInstance) throw new Error("GLPK not initialized. Call await initGLPK() first.")
 	return glpkInstance
