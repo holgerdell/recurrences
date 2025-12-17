@@ -4,11 +4,16 @@
 	"singleQuote": false,
 	"trailingComma": "none",
 	"printWidth": 100,
+	"arrowParens": "avoid",
+	"bracketSameLine": true,
 	"plugins": [
 		"prettier-plugin-svelte",
+		"@ianvs/prettier-plugin-sort-imports",
 		"prettier-plugin-tailwindcss",
 		"@castlabs/prettier-tsdoc-plugin"
 	],
+	"importOrderTypeScriptVersion": "5.9.3",
+	"importOrder": ["^@", "<THIRD_PARTY_MODULES>", "^\\$(?!lib/)", "^\\$lib/", "^[.]"],
 	"defaultReleaseTag": "",
 	"overrides": [
 		{

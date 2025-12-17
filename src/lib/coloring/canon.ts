@@ -67,7 +67,7 @@ function listsEqual(lhs: readonly Color[], rhs: readonly Color[]) {
  * @returns True if a neighbor duplicates the root’s list.
  */
 function neighborKeyMatchesRoot(neighborLists: readonly (readonly Color[])[], rootKey: string) {
-	return neighborLists.some((colors) => colors.length === 2 && colorsToKey(colors) === rootKey)
+	return neighborLists.some(colors => colors.length === 2 && colorsToKey(colors) === rootKey)
 }
 
 /**
@@ -77,7 +77,7 @@ function neighborKeyMatchesRoot(neighborLists: readonly (readonly Color[])[], ro
  * @returns Branch descriptors where `v` is fixed to a single color.
  */
 function buildBranchesFromRoot(colors: readonly Color[]) {
-	return colors.map((color) => ({
+	return colors.map(color => ({
 		assignments: { v: [color] as readonly Color[] }
 	}))
 }
@@ -163,7 +163,7 @@ function buildAdjacencyNodes(
 	permutation: readonly number[]
 ) {
 	const labels = ["v", "a", "b", "c"] as const
-	const orderedNeighbors = permutation.map((index) => neighborColors[index])
+	const orderedNeighbors = permutation.map(index => neighborColors[index])
 	const nodes: GraphNode[] = [{ id: labels[0], colors: [...rootColors] as readonly Color[] }]
 	orderedNeighbors.forEach((colors, idx) => {
 		nodes.push({
@@ -226,24 +226,24 @@ function canonicalizeSubset(
 	rootNode: GraphNode,
 	neighborIds: readonly string[],
 	nodeLookup: SvelteMap<string, GraphNode>,
-	neighbors: Record<string, string[]>
+	neighbors: Record<string, Set<string>>
 ): CanonicalSituation | null {
 	if (neighborIds.length !== 3) return null
 	const neighborNodes = neighborIds
-		.map((id) => nodeLookup.get(id))
+		.map(id => nodeLookup.get(id))
 		.filter((node): node is GraphNode => Boolean(node))
 	if (neighborNodes.length !== 3) return null
 	const rootColors = normalizeColors(rootNode.colors)
-	const neighborColors = neighborNodes.map((node) => normalizeColors(node.colors))
+	const neighborColors = neighborNodes.map(node => normalizeColors(node.colors))
 	if (
 		rootColors.length === 2 &&
-		neighborColors.some((colors) => colors.length === 2 && listsEqual(colors, rootColors))
+		neighborColors.some(colors => colors.length === 2 && listsEqual(colors, rootColors))
 	) {
 		return null
 	}
 	const nodeIds = [rootNode.id, ...neighborIds]
 	const adjacencyMatrix = buildAdjacencyMatrix(nodeIds, neighbors)
-	const colorStrings = [rootColors, ...neighborColors].map((colors) => colorsToKey(colors))
+	const colorStrings = [rootColors, ...neighborColors].map(colors => colorsToKey(colors))
 	let bestSignature = ""
 	let bestPermutation = NEIGHBOR_PERMUTATIONS[0]
 	for (const permutation of NEIGHBOR_PERMUTATIONS) {
@@ -274,7 +274,7 @@ function createSignature(
 	adjacencyMatrix: boolean[][],
 	order: readonly number[]
 ) {
-	const colorPart = order.map((index) => colorStrings[index]).join("|")
+	const colorPart = order.map(index => colorStrings[index]).join("|")
 	const edges: string[] = []
 	for (let i = 0; i < order.length; i++) {
 		for (let j = i + 1; j < order.length; j++) {
@@ -326,11 +326,11 @@ export function canonicalizeLocalSituations(
 	edges: GraphEdge[],
 	rootId: string
 ) {
-	const nodeLookup = new SvelteMap(nodes.map((node) => [node.id, node] as const))
+	const nodeLookup = new SvelteMap(nodes.map(node => [node.id, node] as const))
 	const rootNode = nodeLookup.get(rootId)
 	if (!rootNode || !isEligibleList(rootNode.colors)) return []
 	const neighbors = buildNeighborsMap(nodes, edges)
-	const eligibleNeighbors = Array.from(neighbors[rootId] ?? []).filter((neighborId) => {
+	const eligibleNeighbors = Array.from(neighbors[rootId] ?? []).filter(neighborId => {
 		const node = nodeLookup.get(neighborId)
 		return Boolean(node && isEligibleList(node.colors))
 	})
@@ -366,7 +366,7 @@ export function generateAllLocalSituations() {
 						normalizeColors(secondNeighbor),
 						normalizeColors(thirdNeighbor)
 					]
-					const neighborKeys = neighborNormalized.map((colors) => colorsToKey(colors))
+					const neighborKeys = neighborNormalized.map(colors => colorsToKey(colors))
 					if (new SvelteSet(neighborKeys).size !== neighborKeys.length) continue
 					if (rootHasTwoColors && neighborKeyMatchesRoot(neighborNormalized, rootKey)) continue
 					const nodes: GraphNode[] = [
@@ -404,12 +404,12 @@ export const ALL_LOCAL_SITUATIONS = generateAllLocalSituations()
  * @returns Multi-line snippet string or null when the root colors are invalid.
  */
 export function formatBranchingRuleTemplate(situation: CanonicalSituation, index: number) {
-	const rootNode = situation.nodes.find((node) => node.id === "v") ?? situation.nodes[0]
+	const rootNode = situation.nodes.find(node => node.id === "v") ?? situation.nodes[0]
 	if (!rootNode || (rootNode.colors.length !== 2 && rootNode.colors.length !== 3)) return null
 	const branches = buildBranchesFromRoot(rootNode.colors)
-	const nodeLines = situation.nodes.map((node) => formatNodeLiteral(node))
-	const edgeLines = situation.edges.map((edge) => formatEdgeLiteral(edge))
-	const branchLines = branches.map((branch) => formatBranchLiteral(branch.assignments))
+	const nodeLines = situation.nodes.map(node => formatNodeLiteral(node))
+	const edgeLines = situation.edges.map(edge => formatEdgeLiteral(edge))
+	const branchLines = branches.map(branch => formatBranchLiteral(branch.assignments))
 	const lines: string[] = []
 	lines.push("{")
 	lines.push(`  name: "Generated rule ${index + 1}",`)

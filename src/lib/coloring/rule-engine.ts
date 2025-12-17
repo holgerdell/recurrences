@@ -1,7 +1,7 @@
 import { SvelteMap, SvelteSet } from "svelte/reactivity"
 
 import type { Color, GraphEdge, GraphNode } from "./graph-utils"
-import { openNeighborhood, computeDegreeMap } from "./graph-utils"
+import { openNeighborhood, computeDegreeMap, buildNeighborsMap } from "./graph-utils"
 import {
 	ALL_LOCAL_SITUATIONS,
 	buildMissingRuleSnippets as buildMissingRuleSnippetsFromCanon,
@@ -140,12 +140,7 @@ function applyBranchWithDiff(
 		.filter(([, colors]) => colors.length === 1)
 		.map(([id, colors]) => ({ id, color: colors[0] as Color | undefined }))
 		.filter((entry): entry is { id: string; color: Color } => entry.color !== undefined)
-	const initialAdjacency = new SvelteMap<string, SvelteSet<string>>()
-	for (const node of rule.before.nodes) initialAdjacency.set(node.id, new SvelteSet())
-	for (const edge of rule.before.edges) {
-		initialAdjacency.get(edge.from)?.add(edge.to)
-		initialAdjacency.get(edge.to)?.add(edge.from)
-	}
+	const initialNeighborsMap = buildNeighborsMap(rule.before.nodes, rule.before.edges)
 	const listsMatch = (a: readonly Color[], b: readonly Color[]) => {
 		if (a.length !== b.length) return false
 		const setA = new SvelteSet(a)
@@ -155,11 +150,11 @@ function applyBranchWithDiff(
 		return true
 	}
 
-	const baseNodes: GraphNode[] = rule.before.nodes.map((n) => {
+	const baseNodes: GraphNode[] = rule.before.nodes.map(n => {
 		const assigned = assignments[n.id]
 
 		if (assigned) {
-			const removed = n.colors.filter((c) => !assigned.includes(c))
+			const removed = n.colors.filter(c => !assigned.includes(c))
 			return {
 				...n,
 				colors: assigned,
@@ -172,7 +167,7 @@ function applyBranchWithDiff(
 		for (const { id, color } of singleAssignments) {
 			if (id === n.id) continue
 			const adjacent = rule.before.edges.some(
-				(e) => (e.from === id && e.to === n.id) || (e.to === id && e.from === n.id)
+				e => (e.from === id && e.to === n.id) || (e.to === id && e.from === n.id)
 			)
 
 			if (adjacent && n.colors.includes(color)) {
@@ -181,8 +176,8 @@ function applyBranchWithDiff(
 		}
 
 		if (toRemove.size > 0) {
-			const filtered = n.colors.filter((c) => !toRemove.has(c))
-			const removed = n.colors.filter((c) => toRemove.has(c))
+			const filtered = n.colors.filter(c => !toRemove.has(c))
+			const removed = n.colors.filter(c => toRemove.has(c))
 
 			return {
 				...n,
@@ -198,9 +193,9 @@ function applyBranchWithDiff(
 		}
 	})
 
-	const nodeLookup = new SvelteMap(baseNodes.map((node) => [node.id, node] as const))
-	const enhancedNodes: GraphNode[] = baseNodes.map((node) => {
-		const neighbors = initialAdjacency.get(node.id)
+	const nodeLookup = new SvelteMap(baseNodes.map(node => [node.id, node] as const))
+	const enhancedNodes: GraphNode[] = baseNodes.map(node => {
+		const neighbors = initialNeighborsMap[node.id]
 		if (!neighbors || neighbors.size < 2 || node.colors.length === 0) return node
 		const removal = new SvelteSet<Color>()
 		const neighborIds = Array.from(neighbors)
@@ -209,16 +204,16 @@ function applyBranchWithDiff(
 				const left = nodeLookup.get(neighborIds[i])
 				const right = nodeLookup.get(neighborIds[j])
 				if (!left || !right) continue
-				if (!initialAdjacency.get(left.id)?.has(right.id)) continue
+				if (!initialNeighborsMap[left.id]?.has(right.id)) continue
 				if (left.colors.length !== 2 || right.colors.length !== 2) continue
 				if (!listsMatch(left.colors, right.colors)) continue
 				for (const color of left.colors) removal.add(color)
 			}
 		}
 		if (removal.size === 0) return node
-		const filtered = node.colors.filter((c) => !removal.has(c))
+		const filtered = node.colors.filter(c => !removal.has(c))
 		if (filtered.length === node.colors.length) return node
-		const removedColors = node.colors.filter((c) => removal.has(c))
+		const removedColors = node.colors.filter(c => removal.has(c))
 		return {
 			...node,
 			colors: filtered,
@@ -229,8 +224,8 @@ function applyBranchWithDiff(
 		}
 	})
 
-	const nodesById = new SvelteMap(enhancedNodes.map((node) => [node.id, { ...node }]))
-	let workingEdges = rule.before.edges.map((edge) => ({ ...edge }))
+	const nodesById = new SvelteMap(enhancedNodes.map(node => [node.id, { ...node }]))
+	let workingEdges = rule.before.edges.map(edge => ({ ...edge }))
 
 	const rebuildAdjacency = () => {
 		const map = new SvelteMap<string, SvelteSet<string>>()
@@ -292,11 +287,11 @@ function applyBranchWithDiff(
 		nodesById.delete(id_a)
 		nodesById.delete(id_b)
 		workingEdges = workingEdges
-			.map((edge) => ({
+			.map(edge => ({
 				from: edge.from in [id_a, id_b] ? combinedID : edge.from,
 				to: edge.to in [id_a, id_b] ? combinedID : edge.to
 			}))
-			.filter((edge) => edge.from !== edge.to)
+			.filter(edge => edge.from !== edge.to)
 	}
 
 	const dedupedEdgesMap = new SvelteMap<string, GraphEdge>()
@@ -336,7 +331,7 @@ function computeMeasure(
 	let n3 = 0
 	let n2 = 0
 	for (const node of nodes) {
-		const qualifies = degrees[node.id] >= 3 || nonBranchingVertices.find((x) => x === node.id)
+		const qualifies = degrees[node.id] >= 3 || nonBranchingVertices.find(x => x === node.id)
 		if (!qualifies) continue
 		if (node.colors.length === 3) n3 += 1
 		else if (node.colors.length === 2) n2 += 1
@@ -392,7 +387,7 @@ function buildRecurrenceStrings(deltas: Measure[]) {
  * @returns True when every weighted drop is positive.
  */
 function isValidWeightVector(deltas: Measure[], weights: WeightVector) {
-	return deltas.every((delta) => weights.w3 * delta.n3 + weights.w2 * delta.n2 > 0)
+	return deltas.every(delta => weights.w3 * delta.n3 + weights.w2 * delta.n2 > 0)
 }
 
 /**
@@ -426,7 +421,7 @@ function buildWeightedScalarRecurrence(
 	deltas: Measure[],
 	weights: WeightVector
 ): { display: string; equation: string; drops: number[] } {
-	const drops = deltas.map((delta) => weights.w3 * delta.n3 + weights.w2 * delta.n2)
+	const drops = deltas.map(delta => weights.w3 * delta.n3 + weights.w2 * delta.n2)
 	const counts = new SvelteMap<number, number>()
 	for (const drop of drops) {
 		if (drop <= 0) continue
@@ -461,7 +456,7 @@ export function analyzeRule(rule: BranchingRule): RuleAnalysis {
 	const focus = rule.focus ?? [rule.root]
 	const measureBefore = computeMeasure(rule.before.nodes, rule.before.edges, focus)
 	const beforeHasColoring = hasProperColoring(rule.before.nodes, rule.before.edges)
-	const branchDetails = rule.branches.map((branch) => {
+	const branchDetails = rule.branches.map(branch => {
 		const after = applyBranchWithDiff(rule, branch)
 		const measureAfter = computeMeasure(after.nodes, after.edges, focus)
 		const hasColoring = hasProperColoring(after.nodes, after.edges)
@@ -471,7 +466,7 @@ export function analyzeRule(rule: BranchingRule): RuleAnalysis {
 		}
 		return { after, measureAfter, delta, hasColoring }
 	})
-	const deltas = branchDetails.map((b) => b.delta)
+	const deltas = branchDetails.map(b => b.delta)
 	const { display, equation } = buildRecurrenceStrings(deltas)
 	const weightVector = findWeightVector(deltas)
 	let solverDisplay: string | undefined
@@ -505,7 +500,7 @@ export function analyzeRule(rule: BranchingRule): RuleAnalysis {
  * @returns Array of rule analysis results in the same order as input.
  */
 export function analyzeRules(rulesToAnalyze: BranchingRule[]): RuleAnalysis[] {
-	return rulesToAnalyze.map((rule) => analyzeRule(rule))
+	return rulesToAnalyze.map(rule => analyzeRule(rule))
 }
 
 /**
@@ -526,7 +521,7 @@ export function testBranchingRuleExhaustiveness(
 		)
 		for (const situation of canonicalSituations) coverage.add(situation.signature)
 	}
-	const missing = ALL_LOCAL_SITUATIONS.filter((situation) => !coverage.has(situation.signature))
+	const missing = ALL_LOCAL_SITUATIONS.filter(situation => !coverage.has(situation.signature))
 	return {
 		exhaustive: missing.length === 0,
 		missing,

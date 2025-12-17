@@ -106,7 +106,7 @@ export function parseRecurrences(lines: string | string[]): ParseResult {
 		const func = lhsMatch[1]
 		const rawArgs = lhsMatch[2]
 			.split(",")
-			.map((v) => v.trim())
+			.map(v => v.trim())
 			.filter(Boolean)
 
 		// Validate function name.
@@ -171,7 +171,7 @@ export function parseRecurrences(lines: string | string[]): ParseResult {
 		}
 
 		const summands = splitRhs(rhs)
-			.map((t) => t.trim())
+			.map(t => t.trim())
 			.filter(Boolean)
 		const rawTerms: Term[] = []
 
@@ -189,7 +189,7 @@ export function parseRecurrences(lines: string | string[]): ParseResult {
 
 				const coef = m[1] ? parseFloat(m[1]) : 1
 				const fnName = m[2]
-				const argsRaw = m[3].split(",").map((a) => a.trim())
+				const argsRaw = m[3].split(",").map(a => a.trim())
 
 				if (!IDENTIFIER_PATTERN.test(fnName)) {
 					return { ok: false, error: `Invalid function name '${fnName}'.` }
@@ -229,7 +229,7 @@ export function parseRecurrences(lines: string | string[]): ParseResult {
 		for (const term of rawTerms) {
 			if (term.type === "constant") constantSum += term.coef
 			else {
-				const key = vars.map((v) => term.shifts[v] ?? 0).join(",")
+				const key = vars.map(v => term.shifts[v] ?? 0).join(",")
 				functionMap.set(key, (functionMap.get(key) ?? 0) + term.coef)
 			}
 		}
@@ -267,12 +267,12 @@ export function formatRecurrences(recurrences: Recurrence): string {
 			const lhsArgs = fixedArgs?.length ? fixedArgs.map(String).join(",") : vars.join(",")
 			const lhs = `${func}(${lhsArgs})`
 
-			const rhsParts = terms.map((term) => {
+			const rhsParts = terms.map(term => {
 				if (term.type === "constant") return String(term.coef)
 				let coefStr = ""
 				if (term.coef !== 1 && term.coef !== -1) coefStr = term.coef.toString() + "*"
 				else if (term.coef === -1) coefStr = "-"
-				const args = (fixedArgs ?? vars).map((arg) => {
+				const args = (fixedArgs ?? vars).map(arg => {
 					if (typeof arg === "number") return String(arg)
 					const off = term.shifts[arg] ?? 0
 					if (off === 0) return arg
@@ -322,7 +322,7 @@ export function recurrencesToPolynomialSystem(recurrences: Recurrence): Polynomi
 	const varSet = new Set<string>()
 	for (const rec of recurrences) {
 		polynomials.push(recurrenceToPolynomial(rec))
-		rec.vars.forEach((v) => varSet.add(v))
+		rec.vars.forEach(v => varSet.add(v))
 	}
 	return { polynomials, variables: Array.from(varSet) }
 }
@@ -380,10 +380,10 @@ export async function isWeightedCausal(
 		for (const term of eq.terms) {
 			if (term.type === "constant") continue
 			if (term.func !== eq.func) continue
-			const vec = vars.map((v) => term.shifts?.[v] ?? 0)
+			const vec = vars.map(v => term.shifts?.[v] ?? 0)
 
 			// Self‑reference (zero shift) ⇒ non‑causal
-			if (vec.every((x) => x === 0)) {
+			if (vec.every(x => x === 0)) {
 				return {
 					feasible: false,
 					status: glpk.GLP_INFEAS,
@@ -414,7 +414,7 @@ export async function isWeightedCausal(
 		objective: {
 			direction: glpk.GLP_MIN,
 			name: "obj",
-			vars: vars.map((v) => ({ name: v, coef: 0 }))
+			vars: vars.map(v => ({ name: v, coef: 0 }))
 		},
 		subjectTo: [] as {
 			name: string
@@ -446,7 +446,7 @@ export async function isWeightedCausal(
 	// normalization: Σ w_j = 1
 	model.subjectTo.push({
 		name: "normalize",
-		vars: vars.map((v) => ({ name: v, coef: 1 })),
+		vars: vars.map(v => ({ name: v, coef: 1 })),
 		bnds: { type: glpk.GLP_FX, ub: 1, lb: 1 }
 	})
 
@@ -473,7 +473,7 @@ export async function isWeightedCausal(
 	}
 
 	// 6️⃣ Compute dot products (diagnostic only)
-	const dotProducts = shifts.map((s) => ({
+	const dotProducts = shifts.map(s => ({
 		shift: s,
 		dot: vars.reduce((sum, v, i) => sum + s[i] * (weights[v] ?? 0), 0)
 	}))
@@ -499,7 +499,7 @@ export async function isWeightedCausal(
 export async function solveRecurrenceSystem(
 	recurrences: Recurrence
 ): Promise<Root | "divergent" | null> {
-	return isWeightedCausal(recurrences).then((x) => {
+	return isWeightedCausal(recurrences).then(x => {
 		if (!x.feasible) return "divergent"
 		const system = recurrencesToPolynomialSystem(recurrences)
 		const roots = dominantRoot(system)
@@ -517,7 +517,7 @@ export async function solveRecurrenceSystem(
 export async function solveRecurrencesFromStrings(lines: string): Promise<string> {
 	const parsed = parseRecurrences(lines)
 	if (!parsed.ok) return Promise.resolve(`Error: ${parsed.error}`)
-	return solveRecurrenceSystem(parsed.recurrences).then((roots) => {
+	return solveRecurrenceSystem(parsed.recurrences).then(roots => {
 		if (roots === "divergent") return "divergent"
 		return formatAsymptotics(roots)
 	})

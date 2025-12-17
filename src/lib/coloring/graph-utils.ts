@@ -29,11 +29,11 @@ export interface GraphEdge {
  * @returns Map from node id to a set of neighboring ids.
  */
 export function buildNeighborsMap(nodes: readonly GraphNode[], edges: readonly GraphEdge[]) {
-	const neighborsMap: Record<string, string[]> = {}
-	for (const node of nodes) neighborsMap[node.id] = []
+	const neighborsMap: Record<string, Set<string>> = {}
+	for (const node of nodes) neighborsMap[node.id] = new Set()
 	for (const edge of edges) {
-		neighborsMap[edge.from].push(edge.to)
-		neighborsMap[edge.to].push(edge.from)
+		neighborsMap[edge.from].add(edge.to)
+		neighborsMap[edge.to].add(edge.from)
 	}
 	return neighborsMap
 }
@@ -42,19 +42,19 @@ export function buildNeighborsMap(nodes: readonly GraphNode[], edges: readonly G
  * Converts an Neighbors map into a dense boolean matrix over a fixed node ordering.
  *
  * @param nodeIds - Node identifiers defining row/column order.
- * @param adjacency - Neighbors map produced by buildNeighborsMap.
+ * @param neighborsMap - Neighbors map produced by buildNeighborsMap.
  * @returns Boolean matrix indicating connectivity.
  */
 export function buildAdjacencyMatrix(
 	nodeIds: readonly string[],
-	adjacency: Readonly<Record<string, readonly string[]>>
+	neighborsMap: Readonly<Record<string, Set<string>>>
 ) {
 	const size = nodeIds.length
 	const matrix = Array.from({ length: size }, () => Array<boolean>(size).fill(false))
 	const lookup: Record<string, number> = {}
 	nodeIds.forEach((id, idx) => (lookup[id] = idx))
 	for (let i = 0; i < size; i++) {
-		const neighbors = adjacency[nodeIds[i]]
+		const neighbors = neighborsMap[nodeIds[i]]
 		if (!neighbors) continue
 		for (const neighborId of neighbors) {
 			const j = lookup[neighborId]

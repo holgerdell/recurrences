@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { GraphNode, GraphEdge } from "$lib/coloring/graph-utils"
 	import { SvelteMap, SvelteSet } from "svelte/reactivity"
+	import type { GraphEdge, GraphNode } from "$lib/coloring/graph-utils"
 
 	// ============================================================
 	// Props
@@ -47,7 +47,7 @@
 
 		for (const id of desiredSeeds) {
 			if (seen.has(id)) continue
-			if (!nodes.some((n) => n.id === id)) continue
+			if (!nodes.some(n => n.id === id)) continue
 			seeds.push(id)
 			seen.add(id)
 		}
@@ -133,7 +133,7 @@
 	})
 
 	function findNode(id: string) {
-		return positionedNodes.find((n) => n.id === id)
+		return positionedNodes.find(n => n.id === id)
 	}
 
 	function cx(x: number) {
@@ -149,12 +149,12 @@
 	// ============================================================
 	const width = $derived.by(() => {
 		if (!positionedNodes.length) return NODE_W
-		return Math.max(...positionedNodes.map((n) => n.x + NODE_W))
+		return Math.max(...positionedNodes.map(n => n.x + NODE_W))
 	})
 
 	const height = $derived.by(() => {
 		if (!positionedNodes.length) return NODE_H
-		return Math.max(...positionedNodes.map((n) => n.y + NODE_H))
+		return Math.max(...positionedNodes.map(n => n.y + NODE_H))
 	})
 </script>
 
@@ -170,8 +170,7 @@
 					x2={cx(b.x) * scale}
 					y2={cy(b.y) * scale}
 					stroke="#6b7280"
-					stroke-width="2"
-				/>
+					stroke-width="2" />
 			{/if}
 		{/each}
 	</svg>
@@ -186,8 +185,7 @@
 
 		<div
 			class={`absolute flex flex-col items-center justify-center rounded-xl border-2 font-mono text-[0.8rem] text-slate-800 ${stateClass}`}
-			style={`left:${n.x * scale}px; top:${n.y * scale}px; width:${NODE_W * scale}px; height:${NODE_H * scale}px`}
-		>
+			style={`left:${n.x * scale}px; top:${n.y * scale}px; width:${NODE_W * scale}px; height:${NODE_H * scale}px`}>
 			<div class="font-semibold">{n.id}</div>
 
 			<div class="flex gap-1 text-xs">

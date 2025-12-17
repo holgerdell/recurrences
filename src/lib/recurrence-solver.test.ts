@@ -95,10 +95,10 @@ describe("parseRecurrences", () => {
 		expect(result.ok).toBe(true)
 		if (result.ok) {
 			const rec = result.recurrences[0]
-			const fterms = rec.terms.filter((t) => t.type === "function")
+			const fterms = rec.terms.filter(t => t.type === "function")
 			expect(fterms.length).toBe(2)
 			const v = rec.vars[0]
-			const offs = fterms.map((t) => (t.type === "function" ? t.shifts[v] : 0))
+			const offs = fterms.map(t => (t.type === "function" ? t.shifts[v] : 0))
 			expect(offs).toContain(-2)
 			expect(offs).toContain(1)
 		}
@@ -353,7 +353,7 @@ const printDebug = (name: string, dbg: WeightedCausalDebug) => {
 	console.log(`Feasible: ${dbg.feasible}`)
 	console.log(`Status: ${dbg.statusName}`)
 	console.log(`Weights:`, dbg.weights)
-	dbg.dotProducts?.forEach((d) =>
+	dbg.dotProducts?.forEach(d =>
 		console.log(`  shift [${d.shift.join(", ")}] · w = ${d.dot.toFixed(6)}`)
 	)
 	console.groupEnd()

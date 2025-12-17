@@ -98,7 +98,7 @@ export function formatCharacteristicPolynomials(system: PolynomialSystem): strin
 	const toTermString = (coef: number, monomial: Monomial): string => {
 		const vars = Object.keys(monomial)
 		const monoStr =
-			vars.length === 0 ? "1" : vars.map((v) => `${nameMap[v]}^${monomial[v]}`).join("*")
+			vars.length === 0 ? "1" : vars.map(v => `${nameMap[v]}^${monomial[v]}`).join("*")
 		const abs = Math.abs(coef)
 		if (vars.length === 0) {
 			return (coef >= 0 ? "" : "- ") + String(abs)
@@ -107,7 +107,7 @@ export function formatCharacteristicPolynomials(system: PolynomialSystem): strin
 		return (coef >= 0 ? "+ " : "- ") + coefStr + monoStr
 	}
 
-	return system.polynomials.map((poly) => {
+	return system.polynomials.map(poly => {
 		const body = poly.terms
 			.map((t, i) => {
 				const s = toTermString(t.coefficient, t.monomial)
@@ -241,19 +241,19 @@ function solve2DPolynomial(poly: Polynomial): Root | null {
 	}
 
 	// symmetric x=y case
-	const sym = findPositiveRoot((x) => f(x, x), 1.01, 10)
+	const sym = findPositiveRoot(x => f(x, x), 1.01, 10)
 	if (sym !== null) {
 		const s = snapInt(sym)
 		return { [v1]: s, [v2]: s }
 	}
 	// fix x and solve y
 	for (let x = 1.01; x <= 5; x += 0.01) {
-		const y = findPositiveRoot((y) => f(x, y), 1.01, 10)
+		const y = findPositiveRoot(y => f(x, y), 1.01, 10)
 		if (y !== null) return { [v1]: snapInt(x), [v2]: snapInt(y) }
 	}
 	// fix y and solve x
 	for (let y = 1.01; y <= 5; y += 0.01) {
-		const x = findPositiveRoot((x) => f(x, y), 1.01, 10)
+		const x = findPositiveRoot(x => f(x, y), 1.01, 10)
 		if (x !== null) return { [v1]: snapInt(x), [v2]: snapInt(y) }
 	}
 	return null
@@ -279,8 +279,8 @@ export function dominantRoot(system: PolynomialSystem, ACCEPTABLE_ERROR = 1e-8):
 	}
 
 	// Detect if all polynomials are constant (no variables appear)
-	const allConstant = system.polynomials.every((poly) =>
-		poly.terms.every((t) => Object.keys(t.monomial).length === 0)
+	const allConstant = system.polynomials.every(poly =>
+		poly.terms.every(t => Object.keys(t.monomial).length === 0)
 	)
 	if (allConstant) {
 		const roots: Root = {}
@@ -296,7 +296,7 @@ export function dominantRoot(system: PolynomialSystem, ACCEPTABLE_ERROR = 1e-8):
 	const roots: Root = {}
 
 	for (const poly of sortedPolys) {
-		const unknowns = poly.variables.filter((v) => !(v in roots))
+		const unknowns = poly.variables.filter(v => !(v in roots))
 
 		// --- Unconstrained 2D case ---
 		if (poly.variables.length === 2 && unknowns.length === 2) {

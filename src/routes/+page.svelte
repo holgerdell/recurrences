@@ -1,23 +1,21 @@
 <script lang="ts">
 	import { browser } from "$app/environment"
 	import { goto } from "$app/navigation"
-
 	import RecurrenceCard from "$lib/components/RecurrenceCard.svelte"
-	import type { Root } from "$lib/root-finding"
+	import { useLocalStorageState } from "$lib/persistent-state.svelte"
 	import {
 		formatRecurrences,
 		parseRecurrences,
 		solveRecurrenceSystem,
 		type Recurrence
 	} from "$lib/recurrence-solver"
-
-	import { useLocalStorageState } from "$lib/persistent-state.svelte"
+	import type { Root } from "$lib/root-finding"
 
 	// --- Persistent log state ---
 	const logState = useLocalStorageState<string[]>({
 		key: "recurrence-log-v3",
 		defaultValue: [],
-		validate: (v): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string"),
+		validate: (v): v is string[] => Array.isArray(v) && v.every(x => typeof x === "string"),
 		onInit() {
 			// clean up legacy keys
 			localStorage.removeItem("recurrence-log")
@@ -99,7 +97,7 @@
 			description: "D(m,n) is the number of paths from (0,0) to (m,n) with diagonal moves.",
 			equations: ["D(m,n)=D(m,n-1)+D(m-1,n)+D(m-1,n-1)"]
 		}
-	].map((x) => {
+	].map(x => {
 		const result = parseRecurrences(x.equations)
 		if (!result.ok) throw Error
 		return { ...x, recurrences: result.recurrences }
@@ -130,16 +128,14 @@
 				root={previewPromise}
 				error={parsed.ok ? undefined : parsed.error}
 				kind="current"
-				emptyMessage={S.text.trim() ? undefined : "No input provided"}
-			/>
+				emptyMessage={S.text.trim() ? undefined : "No input provided"} />
 		{/if}
 
 		{#if parsed.ok}
 			<div class="mt-3 flex">
 				<button
 					onclick={add}
-					class="inline-flex items-center gap-2 rounded bg-green-600 px-3 py-2 text-sm text-white hover:bg-green-700"
-				>
+					class="inline-flex items-center gap-2 rounded bg-green-600 px-3 py-2 text-sm text-white hover:bg-green-700">
 					Add to Stored
 					<span aria-hidden="true">▼</span>
 				</button>
@@ -155,8 +151,7 @@
 			{#if logState.value.length > 0}
 				<button
 					onclick={clearLog}
-					class="rounded bg-red-600 px-3 py-1 text-sm text-white transition-colors hover:bg-red-700"
-				>
+					class="rounded bg-red-600 px-3 py-1 text-sm text-white transition-colors hover:bg-red-700">
 					Clear All
 				</button>
 			{/if}
@@ -178,8 +173,7 @@
 						onDelete={() => deleteResult(index)}
 						onSelect={() => {
 							S.text = s
-						}}
-					/>
+						}} />
 				{/each}
 			</div>
 		{/if}
@@ -197,8 +191,7 @@
 					root={solveRecurrenceSystem(ex.recurrences)}
 					description={ex.description}
 					kind="example"
-					onSelect={() => loadRecurrence(ex.recurrences)}
-				/>
+					onSelect={() => loadRecurrence(ex.recurrences)} />
 			{/each}
 		</div>
 	</div>

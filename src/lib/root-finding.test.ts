@@ -1,4 +1,3 @@
-// root-finding.test.ts
 import { describe, test, expect } from "bun:test"
 import {
 	snapInt,

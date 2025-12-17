@@ -1,16 +1,16 @@
 <script lang="ts">
-	import GraphView from "$lib/components/GraphView.svelte"
+	import { rules } from "$lib/coloring/3coloring-rules"
 	import {
 		analyzeRules,
 		buildMissingRuleSnippets,
 		describeAssignments,
 		testBranchingRuleExhaustiveness
 	} from "$lib/coloring/rule-engine"
-	import { rules } from "$lib/coloring/3coloring-rules"
+	import GraphView from "$lib/components/GraphView.svelte"
 	import { solveRecurrencesFromStrings } from "$lib/recurrence-solver"
 
 	const ruleAnalyses = analyzeRules(rules)
-	const recurrenceSolutions = ruleAnalyses.map((analysis) =>
+	const recurrenceSolutions = ruleAnalyses.map(analysis =>
 		analysis.solverEquation
 			? solveRecurrencesFromStrings(analysis.solverEquation)
 			: Promise.resolve("No decreasing combination found")
@@ -70,8 +70,7 @@
 								...node,
 								diff: idx === 0 ? "root" : "unchanged"
 							}))}
-							edges={situation.edges}
-						/>
+							edges={situation.edges} />
 					</div>
 				{/each}
 			</div>
@@ -118,12 +117,11 @@
 					<GraphView
 						root={rule.root}
 						focus={rule.focus ?? [rule.root]}
-						nodes={rule.before.nodes.map((n) => ({
+						nodes={rule.before.nodes.map(n => ({
 							...n,
 							diff: (rule.focus ?? [rule.root]).includes(n.id) ? "root" : "unchanged"
 						}))}
-						edges={rule.before.edges}
-					/>
+						edges={rule.before.edges} />
 				</div>
 			</div>
 
@@ -143,8 +141,7 @@
 								focus={rule.focus ?? [rule.root]}
 								scale={0.65}
 								nodes={branchView.after.nodes}
-								edges={branchView.after.edges}
-							/>
+								edges={branchView.after.edges} />
 						</div>
 					{/each}
 				</div>
