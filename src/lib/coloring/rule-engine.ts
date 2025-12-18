@@ -417,7 +417,7 @@ function findWeightVector(deltas: Measure[]): WeightVector | null {
  * @param weights - Weight vector defining the scalar measure.
  * @returns Display/equation strings plus the list of drops.
  */
-function buildWeightedScalarRecurrence(
+export function buildWeightedScalarRecurrence(
 	deltas: Measure[],
 	weights: WeightVector
 ): { display: string; equation: string; drops: number[] } {

@@ -3,20 +3,47 @@
 	import {
 		analyzeRules,
 		buildMissingRuleSnippets,
+		buildWeightedScalarRecurrence,
 		describeAssignments,
-		testBranchingRuleExhaustiveness
+		testBranchingRuleExhaustiveness,
+		type WeightVector
 	} from "$lib/coloring/rule-engine"
 	import GraphView from "$lib/components/GraphView.svelte"
 	import { solveRecurrencesFromStrings } from "$lib/recurrence-solver"
 
+	type WeightedScalarRecurrence = ReturnType<typeof buildWeightedScalarRecurrence>
+
 	const ruleAnalyses = analyzeRules(rules)
-	const recurrenceSolutions = ruleAnalyses.map(analysis =>
-		analysis.solverEquation
-			? solveRecurrencesFromStrings(analysis.solverEquation)
-			: Promise.resolve("No decreasing combination found")
-	)
 	const exhaustivenessReport = testBranchingRuleExhaustiveness(rules)
 	const missingRuleSnippets = buildMissingRuleSnippets(exhaustivenessReport)
+
+	let coeffN1 = $state(1)
+	let coeffN2 = $state(1)
+
+	const sanitizeWeight = (value: number) => (Number.isFinite(value) ? value : 0)
+
+	const userWeights: WeightVector = $derived({
+		w3: sanitizeWeight(coeffN1),
+		w2: sanitizeWeight(coeffN2)
+	})
+
+	const weightedRecurrences = $derived.by<Array<WeightedScalarRecurrence | null>>(() => {
+		const weights = userWeights
+		return ruleAnalyses.map(analysis => {
+			const deltas = analysis.branchDetails.map(branch => branch.delta)
+			if (weights.w3 === 0 && weights.w2 === 0) return null
+			const drops = deltas.map(delta => weights.w3 * delta.n3 + weights.w2 * delta.n2)
+			if (drops.some(drop => drop <= 0)) return null
+			const weighted = buildWeightedScalarRecurrence(deltas, weights)
+			return weighted.drops.length ? weighted : null
+		})
+	})
+
+	const recurrenceSolutions = $derived.by<Array<Promise<string> | null>>(() =>
+		weightedRecurrences.map(weighted =>
+			weighted ? solveRecurrencesFromStrings(weighted.equation) : null
+		)
+	)
 </script>
 
 <div class="mx-auto max-w-6xl space-y-12 p-8">
@@ -42,6 +69,41 @@
 			</li>
 		</ul>
 		(Neighbors of branching vertices are assumed to have degree at least three.)
+	</div>
+
+	<div class="rounded-lg border border-emerald-200 bg-white p-4 text-sm text-gray-800">
+		<div class="text-xs font-semibold tracking-wide text-emerald-700 uppercase">Custom Measure</div>
+		<p class="mt-2">
+			Set the coefficients for <span class="font-mono">n₁</span> and
+			<span class="font-mono">n₂</span>
+			to define the scalar measure <span class="font-mono">n = c₁·n₁ + c₂·n₂</span> that the solver will
+			use for every rule.
+		</p>
+		<div class="mt-4 grid gap-4 md:grid-cols-2">
+			<label
+				class="flex flex-col gap-1 text-xs font-semibold tracking-wide text-gray-600 uppercase">
+				<span>Coefficient c₁ (n₁)</span>
+				<input
+					type="number"
+					min="0"
+					step="0.1"
+					class="rounded border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:border-emerald-500 focus:outline-none"
+					bind:value={coeffN1} />
+			</label>
+			<label
+				class="flex flex-col gap-1 text-xs font-semibold tracking-wide text-gray-600 uppercase">
+				<span>Coefficient c₂ (n₂)</span>
+				<input
+					type="number"
+					min="0"
+					step="0.1"
+					class="rounded border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:border-emerald-500 focus:outline-none"
+					bind:value={coeffN2} />
+			</label>
+		</div>
+		<p class="mt-3 text-xs text-gray-500">
+			Current measure: <span class="font-mono">n = {userWeights.w3}·n₁ + {userWeights.w2}·n₂</span>
+		</p>
 	</div>
 
 	<div class="rounded-lg border border-blue-200 bg-white p-4 text-sm text-gray-800">
@@ -89,24 +151,32 @@
 				<div class="text-xs font-semibold tracking-wide text-gray-500 uppercase">Recurrence</div>
 				<div class="font-mono text-base">{analysis.recurrenceDisplay}</div>
 
-				{#if analysis.solverDisplay}
-					<div class="mt-3 text-xs font-semibold tracking-wide text-gray-500 uppercase">
-						Weighted Measure
+				<div class="mt-3 text-xs font-semibold tracking-wide text-gray-500 uppercase">
+					Scalar Recurrence (custom measure)
+				</div>
+				{#if weightedRecurrences[i]}
+					<div class="font-mono text-base">{weightedRecurrences[i]?.display}</div>
+				{:else}
+					<div class="text-sm text-red-600">
+						The chosen coefficients do not decrease every branch.
 					</div>
-					<div class="font-mono text-base">{analysis.solverDisplay}</div>
 				{/if}
 
 				<div class="mt-3 text-xs font-semibold tracking-wide text-gray-500 uppercase">Solution</div>
 				<div class="font-mono text-base text-gray-800">
-					{#await recurrenceSolutions[i]}
-						<span class="text-gray-500">Computing…</span>
-					{:then solution}
-						{solution}
-					{:catch error}
-						<span class="text-red-600">
-							{error instanceof Error ? error.message : String(error)}
-						</span>
-					{/await}
+					{#if weightedRecurrences[i] && recurrenceSolutions[i]}
+						{#await recurrenceSolutions[i]}
+							<span class="text-gray-500">Computing…</span>
+						{:then solution}
+							{solution}
+						{:catch error}
+							<span class="text-red-600">
+								{error instanceof Error ? error.message : String(error)}
+							</span>
+						{/await}
+					{:else}
+						<span class="text-red-600">Provide coefficients that decrease all branches.</span>
+					{/if}
 				</div>
 			</div>
 

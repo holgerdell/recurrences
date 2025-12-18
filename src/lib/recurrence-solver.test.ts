@@ -322,7 +322,7 @@ describe("formatRecurrences", () => {
 		expect(result.ok).toBe(true)
 		if (result.ok) {
 			const formatted = formatRecurrences(result.recurrences)
-			expect(formatted[0]).toBe("T_func(n_var) = 2*T_func(n_var-1)")
+			expect(formatted).toBe("T_func(n_var) = 2*T_func(n_var-1)")
 		}
 	})
 
@@ -336,7 +336,7 @@ describe("formatRecurrences", () => {
 		expect(result.ok).toBe(true)
 		if (result.ok) {
 			const formatted = formatRecurrences(result.recurrences)
-			expect(formatted[0]).toBe("T(n) = T(n-2) + T(n+1)")
+			expect(formatted).toBe("T(n) = T(n-2) + T(n+1)")
 		}
 	})
 })
@@ -397,7 +397,9 @@ describe("isWeightedCausal (LP-based, diagnostic mode)", () => {
 		"H(i,j)=H(i-1,j-2)", // all negative
 		"S(n)=S(n-1)+S(n-3)", // long negative steps
 		"Q(n,m,p)=Q(n-1,m+1,p)+Q(n,m-1,p+1)", // consistent hierarchy
-		"A(x,y,z)=A(x+1,y-2,z+3)" // mixed signs in one term
+		"A(x,y,z)=A(x+1,y-2,z+3)", // mixed signs in one term
+		"T(n)=1.5 T(n-1)", // rational coefficients
+		"T(n)=2 T(n-1.5)" // rational reduction of measure
 	]
 
 	for (const expr of causal) {

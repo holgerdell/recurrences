@@ -56,6 +56,7 @@ export type ParseResult = { ok: true; recurrences: Recurrence } | { ok: false; e
  * Regex restricting function and variable identifiers to alphanumerics plus underscores.
  */
 export const IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
+const NUMBER_PATTERN = /^-?\d+(?:\.\d+)?$/
 
 // ======================================================
 //   Utility functions (from previous version)
@@ -140,8 +141,8 @@ export function parseRecurrences(lines: string | string[]): ParseResult {
 			if (IDENTIFIER_PATTERN.test(a)) {
 				vars.push(a)
 				fixedArgs.push(a)
-			} else if (/^-?\d+$/.test(a)) {
-				fixedArgs.push(parseInt(a, 10))
+			} else if (NUMBER_PATTERN.test(a)) {
+				fixedArgs.push(parseFloat(a))
 			} else {
 				return {
 					ok: false,
@@ -176,7 +177,7 @@ export function parseRecurrences(lines: string | string[]): ParseResult {
 		const rawTerms: Term[] = []
 
 		// constant?
-		if (summands.length === 1 && /^-?\d+(\.\d+)?$/.test(summands[0])) {
+		if (summands.length === 1 && NUMBER_PATTERN.test(summands[0])) {
 			const constantValue = parseFloat(summands[0])
 			rawTerms.push({ type: "constant", coef: constantValue })
 		} else {
@@ -208,12 +209,12 @@ export function parseRecurrences(lines: string | string[]): ParseResult {
 				const shifts: Record<string, number> = {}
 				let varIndex = 0
 				for (const arg of argsRaw) {
-					if (/^-?\d+$/.test(arg)) continue
+					if (NUMBER_PATTERN.test(arg)) continue
 					const v = vars[varIndex]
 					if (!v) return { ok: false, error: `Unexpected arg '${arg}'` }
-					const matchArg = new RegExp(`^${v}([+-]\\d+)?$`).exec(arg)
+					const matchArg = new RegExp(`^${v}([+-]\\d+(?:\\.\\d+)?)?$`).exec(arg)
 					if (!matchArg) return { ok: false, error: `Invalid arg '${arg}'` }
-					const shift = matchArg[1] ? parseInt(matchArg[1], 10) : 0
+					const shift = matchArg[1] ? parseFloat(matchArg[1]) : 0
 					shifts[v] = shift
 					varIndex++
 				}
