@@ -2,7 +2,7 @@
 	import { browser } from "$app/environment"
 	import { goto } from "$app/navigation"
 	import RecurrenceCard from "$lib/components/RecurrenceCard.svelte"
-	import { useLocalStorageState } from "$lib/persistent-state.svelte"
+	import { LocalStorageState } from "$lib/persistent-state.svelte"
 	import {
 		formatRecurrences,
 		parseRecurrences,
@@ -12,16 +12,17 @@
 	import type { Root } from "$lib/root-finding"
 
 	// --- Persistent log state ---
-	const logState = useLocalStorageState<string[]>({
+	const logState = new LocalStorageState<string[]>({
 		key: "recurrence-log-v3",
 		defaultValue: [],
-		validate: (v): v is string[] => Array.isArray(v) && v.every(x => typeof x === "string"),
-		onInit() {
-			// clean up legacy keys
-			localStorage.removeItem("recurrence-log")
-			localStorage.removeItem("recurrence-log-v2")
-		}
+		validate: (v): v is string[] => Array.isArray(v) && v.every(x => typeof x === "string")
 	})
+
+	// --- Clean up legacy keys ---
+	if (browser && localStorage) {
+		localStorage.removeItem("recurrence-log")
+		localStorage.removeItem("recurrence-log-v2")
+	}
 
 	// --- Component state ---
 	let S = $state<{ text: string }>({ text: "" })
