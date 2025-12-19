@@ -1,20 +1,29 @@
 <script lang="ts">
 	import { SvelteMap, SvelteSet } from "svelte/reactivity"
-	import type { GraphEdge, GraphNode } from "$lib/coloring/graph-utils"
+	import type { Graph, GraphNode } from "$lib/coloring/graph-utils"
 
 	// ============================================================
 	// Props
 	// ============================================================
 	interface Props {
-		nodes: readonly GraphNode[]
-		edges: readonly GraphEdge[]
+		graph: Readonly<Graph>
 		scale?: number
 	}
 
-	const { nodes, edges, scale = 1 }: Props = $props()
-	const roots = $derived(new SvelteSet(nodes.filter(n => n.role === "root").map(n => n.id)))
+	const { graph, scale = 1 }: Props = $props()
+	const roots = $derived(
+		graph.nodes
+			.values()
+			.filter(n => n.role === "root")
+			.map(n => n.id)
+	)
 	const separator = $derived(
-		new SvelteSet(nodes.filter(n => n.role === "separator").map(n => n.id))
+		new SvelteSet(
+			graph.nodes
+				.values()
+				.filter(n => n.role === "separator")
+				.map(n => n.id)
+		)
 	)
 
 	// ============================================================
@@ -28,19 +37,6 @@
 	const V_GAP = 24
 
 	// ============================================================
-	// Adjacency map
-	// ============================================================
-	const adjacency = $derived.by(() => {
-		const map = new SvelteMap<string, string[]>()
-		for (const n of nodes) map.set(n.id, [])
-		for (const e of edges) {
-			map.get(e.from)?.push(e.to)
-			map.get(e.to)?.push(e.from)
-		}
-		return map
-	})
-
-	// ============================================================
 	// BFS distances
 	// ============================================================
 	const distances = $derived.by(() => {
@@ -49,13 +45,9 @@
 
 		for (const id of roots) {
 			if (seen.has(id)) continue
-			if (!nodes.some(n => n.id === id)) continue
+			if (!graph.nodes.values().some(n => n.id === id)) continue
 			seeds.push(id)
 			seen.add(id)
-		}
-
-		if (seeds.length === 0 && nodes.length > 0) {
-			seeds.push(nodes[0].id)
 		}
 
 		const dist = new SvelteMap<string, number>()
@@ -70,7 +62,7 @@
 			const v = queue.shift()!
 			const d = dist.get(v)!
 
-			for (const u of adjacency.get(v) ?? []) {
+			for (const u of graph.neighbors(v)) {
 				if (!dist.has(u)) {
 					dist.set(u, d + 1)
 					queue.push(u)
@@ -80,7 +72,7 @@
 
 		// Unreached nodes go to the last layer
 		const max = Math.max(...dist.values())
-		for (const n of nodes) {
+		for (const n of graph.nodes) {
 			if (!dist.has(n.id)) {
 				dist.set(n.id, max + 1)
 			}
@@ -94,7 +86,7 @@
 	// ============================================================
 	const layers = $derived.by(() => {
 		const map = new SvelteMap<number, GraphNode[]>()
-		for (const n of nodes) {
+		for (const n of graph.nodes) {
 			const d = distances.get(n.id)!
 			if (!map.has(d)) map.set(d, [])
 			map.get(d)!.push(n)
@@ -162,7 +154,7 @@
 
 <div class="relative mx-auto" style={`width:${width * scale}px; height:${height * scale}px`}>
 	<svg width={width * scale} height={height * scale}>
-		{#each edges as e (e.from + "|" + e.to)}
+		{#each graph.edges as e (e.from + "|" + e.to)}
 			{@const a = findNode(e.from)}
 			{@const b = findNode(e.to)}
 			{#if a && b}
@@ -203,7 +195,7 @@
 
 	{#each positionedNodes as n (n.id)}
 		{@const stateClass =
-			n.diff === "root"
+			n.role === "root"
 				? "border-blue-600 bg-blue-50"
 				: n.diff === "changed"
 					? "border-amber-600 bg-amber-50"

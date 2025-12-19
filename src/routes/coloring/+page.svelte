@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from "svelte"
+	import { browser } from "$app/environment"
 	import { rules } from "$lib/coloring/3coloring-rules"
 	import {
 		analyzeRules,
@@ -17,7 +19,10 @@
 	const ruleIndexMap = new Map(rules.map((rule, index) => [rule.name, index]))
 
 	const defaultEnabledRules = Object.fromEntries(
-		rules.map(r => [r.name, r.name !== "One‑vs‑two split"])
+		rules.map(r => [
+			r.name,
+			r.name !== "One‑vs‑two split" && r.name !== "Edge with two common neighbors"
+		])
 	)
 	let enabledRules = $state(defaultEnabledRules)
 	const activeRules = $derived(rules.filter(rule => enabledRules[rule.name] ?? true))
@@ -25,6 +30,10 @@
 	const missingRuleSnippets = $derived(buildMissingRuleSnippets(exhaustivenessReport))
 
 	let userWeights = $state<WeightVector>({ w3: 1, w2: 0.6241 })
+	let isWeightSearchRunning = $state(false)
+
+	const GRID_SEARCH_STEP = 0.01
+	const GRID_SEARCH_STEPS = Math.round(1 / GRID_SEARCH_STEP)
 
 	const extractGrowthBase = (solution: string) => {
 		const powerMatch = solution.match(/([0-9]+(?:\.[0-9]+)?)\^n/)
@@ -33,51 +42,47 @@
 		return fallbackMatch ? parseFloat(fallbackMatch[1]) : null
 	}
 
-	const weightedRecurrences = $derived.by<Array<WeightedScalarRecurrence | null>>(() => {
-		const weights = userWeights
-		return ruleAnalyses.map(analysis => {
+	const quantizeWeight = (value: number) => Number(value.toFixed(2))
+
+	type RuleSolutionSummary = { ruleName: string; solution: string; base: number | null }
+
+	function buildWeightedRecurrencesForWeights(
+		weights: WeightVector,
+		analyses = ruleAnalyses
+	): Array<WeightedScalarRecurrence | null> {
+		if (weights.w3 === 0 && weights.w2 === 0) {
+			return analyses.map(() => null)
+		}
+		return analyses.map(analysis => {
 			const deltas = analysis.branchDetails.map(branch => branch.delta)
-			if (weights.w3 === 0 && weights.w2 === 0) return null
 			const drops = deltas.map(delta => weights.w3 * delta.n3 + weights.w2 * delta.n2)
 			if (drops.some(drop => drop <= 0)) return null
 			const weighted = buildWeightedScalarRecurrence(deltas, weights)
 			return weighted.drops.length ? weighted : null
 		})
-	})
+	}
 
-	const recurrenceSolutions = $derived.by<Array<Promise<string> | null>>(() =>
-		weightedRecurrences.map(weighted =>
+	function buildRecurrenceSolutionsForWeights(
+		weights: WeightVector,
+		recurrences = buildWeightedRecurrencesForWeights(weights)
+	): Array<Promise<string> | null> {
+		return recurrences.map(weighted =>
 			weighted ? solveRecurrencesFromStrings(weighted.equation) : null
 		)
-	)
+	}
 
-	type RuleCompatibilityIssue = { name: string; reason: string }
-	const incompatibleRules = $derived<RuleCompatibilityIssue[]>(
-		activeRules
+	function buildMaxScalarSolutionForWeights(
+		weights: WeightVector,
+		activeRuleList: typeof rules,
+		recurrences = buildWeightedRecurrencesForWeights(weights),
+		solutions = buildRecurrenceSolutionsForWeights(weights, recurrences)
+	): Promise<RuleSolutionSummary | null> | null {
+		const candidates = activeRuleList
 			.map(rule => {
 				const idx = ruleIndexMap.get(rule.name)
 				if (idx === undefined) return null
-				const weighted = weightedRecurrences[idx]
-				const solutionPromise = recurrenceSolutions[idx]
-				if (weighted && solutionPromise) return null
-				return {
-					name: rule.name,
-					reason: !weighted
-						? "Selected weights do not decrease every branch."
-						: "Recurrence solver unavailable for these weights."
-				}
-			})
-			.filter((issue): issue is RuleCompatibilityIssue => issue !== null)
-	)
-
-	type RuleSolutionSummary = { ruleName: string; solution: string; base: number | null }
-	const maxScalarSolution = $derived.by<Promise<RuleSolutionSummary | null> | null>(() => {
-		const candidates = activeRules
-			.map(rule => {
-				const idx = ruleIndexMap.get(rule.name)
-				if (idx === undefined) return null
-				const recurrence = weightedRecurrences[idx]
-				const solutionPromise = recurrenceSolutions[idx]
+				const recurrence = recurrences[idx]
+				const solutionPromise = solutions[idx]
 				if (!recurrence || !solutionPromise) return null
 				return { ruleName: rule.name, promise: solutionPromise }
 			})
@@ -104,6 +109,87 @@
 			}, null)
 			return best ?? results[0]
 		})
+	}
+
+	const weightedRecurrences = $derived(buildWeightedRecurrencesForWeights(userWeights))
+
+	const recurrenceSolutions = $derived(
+		buildRecurrenceSolutionsForWeights(userWeights, weightedRecurrences)
+	)
+
+	type RuleCompatibilityIssue = { name: string; reason: string }
+	const incompatibleRules = $derived(
+		activeRules
+			.map(rule => {
+				const idx = ruleIndexMap.get(rule.name)
+				if (idx === undefined) return null
+				const weighted = weightedRecurrences[idx]
+				const solutionPromise = recurrenceSolutions[idx]
+				if (weighted && solutionPromise) return null
+				return {
+					name: rule.name,
+					reason: !weighted
+						? "Selected weights do not decrease every branch."
+						: "Recurrence solver unavailable for these weights."
+				}
+			})
+			.filter((issue): issue is RuleCompatibilityIssue => issue !== null)
+	)
+
+	const maxScalarSolution = $derived(
+		buildMaxScalarSolutionForWeights(
+			userWeights,
+			activeRules,
+			weightedRecurrences,
+			recurrenceSolutions
+		)
+	)
+
+	async function runGridSearchOnLoad() {
+		if (!browser) return
+		if (isWeightSearchRunning) return
+		isWeightSearchRunning = true
+		try {
+			const activeRuleSnapshot = [...activeRules]
+			let best: { weights: WeightVector; base: number } | null = null
+			for (let i = 0; i <= GRID_SEARCH_STEPS; i += 1) {
+				const w3 = quantizeWeight(i * GRID_SEARCH_STEP)
+				for (let j = 0; j <= GRID_SEARCH_STEPS; j += 1) {
+					const w2 = quantizeWeight(j * GRID_SEARCH_STEP)
+					const weights = { w3, w2 }
+					const recurrences = buildWeightedRecurrencesForWeights(weights)
+					const solutions = buildRecurrenceSolutionsForWeights(weights, recurrences)
+					const summaryPromise = buildMaxScalarSolutionForWeights(
+						weights,
+						activeRuleSnapshot,
+						recurrences,
+						solutions
+					)
+					if (!summaryPromise) continue
+					let summary: RuleSolutionSummary | null
+					try {
+						summary = await summaryPromise
+					} catch {
+						continue
+					}
+					if (!summary || summary.base === null) continue
+					if (!best || summary.base < best.base) {
+						best = { weights, base: summary.base }
+						userWeights = best.weights
+					}
+				}
+				await Promise.resolve()
+			}
+			if (best) {
+				userWeights = best.weights
+			}
+		} finally {
+			isWeightSearchRunning = false
+		}
+	}
+
+	onMount(() => {
+		runGridSearchOnLoad()
 	})
 
 	const setRuleEnabled = (ruleName: string, isEnabled: boolean) => {
@@ -169,6 +255,14 @@
 		<p class="mt-3 text-xs text-gray-500">
 			Current measure: <span class="font-mono">n = {userWeights.w3}·n₁ + {userWeights.w2}·n₂</span>
 		</p>
+		{#if isWeightSearchRunning}
+			<div class="mt-3 flex items-center gap-2 text-xs font-semibold text-emerald-700">
+				<span
+					class="inline-flex h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent"
+					aria-hidden="true"></span>
+				<span>Searching optimal weights…</span>
+			</div>
+		{/if}
 	</div>
 
 	<div class="rounded-lg border border-purple-200 bg-white p-4 text-sm text-gray-800">
@@ -223,19 +317,13 @@
 			</p>
 		{:else}
 			<p class="mt-1 text-sm font-medium text-red-700">
-				Missing {exhaustivenessReport.missingCount} situations. Showing up to six examples below.
+				Missing {exhaustivenessReport.missing.length} situations. Showing up to six examples below.
 			</p>
 			<div class="mt-4 grid gap-4 md:grid-cols-2">
-				{#each exhaustivenessReport.missing.slice(0, 6) as situation (situation.signature)}
+				{#each exhaustivenessReport.missing.slice(0, 6) as situation (situation.signature())}
 					<div class="space-y-2 rounded-lg border bg-gray-50 p-3">
 						<div class="text-xs font-semibold text-gray-500 uppercase">Missing situation</div>
-						<GraphView
-							scale={0.6}
-							nodes={situation.nodes.map((node, idx) => ({
-								...node,
-								diff: idx === 0 ? "root" : "unchanged"
-							}))}
-							edges={situation.edges} />
+						<GraphView graph={situation} scale={0.6} />
 					</div>
 				{/each}
 			</div>
@@ -300,12 +388,7 @@
 			<div>
 				<h3 class="mb-2 font-medium">Before branching</h3>
 				<div class="mx-auto w-fit space-y-2 rounded-lg border bg-gray-50 p-4">
-					<GraphView
-						nodes={rule.before.nodes.map(n => ({
-							...n,
-							diff: n.role === "root" ? "root" : "unchanged"
-						}))}
-						edges={rule.before.edges} />
+					<GraphView graph={rule.before} />
 				</div>
 			</div>
 
@@ -315,15 +398,9 @@
 
 				<div class="flex flex-wrap gap-6">
 					{#each rule.branches as branch, j (branch.assignments)}
-						{@const branchView = analysis.branchDetails[j]}
-
-						<div class="flex-1 space-y-2 rounded-lg border bg-gray-50 p-4">
+						<div class="flex-1 space-y-2 rounded-lg bg-gray-50 p-2 ring ring-amber-300">
 							<div class="font-semibold">{describeAssignments(branch.assignments)}</div>
-
-							<GraphView
-								scale={0.65}
-								nodes={branchView.after.nodes}
-								edges={branchView.after.edges} />
+							<GraphView graph={analysis.branchDetails[j].after} scale={0.65} />
 						</div>
 					{/each}
 				</div>
@@ -341,7 +418,7 @@
 			</header>
 			<pre
 				class="rounded-lg border bg-gray-50 p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap">
-				{missingRuleSnippets.join("\n\n")}
+				{missingRuleSnippets.join(",\n")}
 			</pre>
 		</section>
 	{/if}
