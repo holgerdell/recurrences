@@ -6,14 +6,13 @@
 	// Props
 	// ============================================================
 	interface Props {
-		nodes: GraphNode[]
-		edges: GraphEdge[]
-		root: string
-		focus?: readonly string[]
+		nodes: readonly GraphNode[]
+		edges: readonly GraphEdge[]
+		roots?: readonly string[]
 		scale?: number
 	}
 
-	const { nodes, edges, root, focus, scale = 1 }: Props = $props()
+	const { nodes, edges, roots, scale = 1 }: Props = $props()
 
 	// ============================================================
 	// Layout parameters
@@ -41,7 +40,7 @@
 	// BFS distances
 	// ============================================================
 	const distances = $derived.by(() => {
-		const desiredSeeds = focus && focus.length > 0 ? focus : [root]
+		const desiredSeeds = roots && roots.length > 0 ? roots : []
 		const seeds: string[] = []
 		const seen = new SvelteSet<string>()
 

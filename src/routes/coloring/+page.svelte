@@ -14,18 +14,24 @@
 	type WeightedScalarRecurrence = ReturnType<typeof buildWeightedScalarRecurrence>
 
 	const ruleAnalyses = analyzeRules(rules)
-	const exhaustivenessReport = testBranchingRuleExhaustiveness(rules)
-	const missingRuleSnippets = buildMissingRuleSnippets(exhaustivenessReport)
+	const ruleIndexMap = new Map(rules.map((rule, index) => [rule.name, index]))
 
-	let coeffN1 = $state(1)
-	let coeffN2 = $state(1)
+	const defaultEnabledRules = Object.fromEntries(
+		rules.map(r => [r.name, r.name !== "One‑vs‑two split"])
+	)
+	let enabledRules = $state(defaultEnabledRules)
+	const activeRules = $derived(rules.filter(rule => enabledRules[rule.name] ?? true))
+	const exhaustivenessReport = $derived(testBranchingRuleExhaustiveness(activeRules))
+	const missingRuleSnippets = $derived(buildMissingRuleSnippets(exhaustivenessReport))
 
-	const sanitizeWeight = (value: number) => (Number.isFinite(value) ? value : 0)
+	let userWeights = $state<WeightVector>({ w3: 1, w2: 0.6241 })
 
-	const userWeights: WeightVector = $derived({
-		w3: sanitizeWeight(coeffN1),
-		w2: sanitizeWeight(coeffN2)
-	})
+	const extractGrowthBase = (solution: string) => {
+		const powerMatch = solution.match(/([0-9]+(?:\.[0-9]+)?)\^n/)
+		if (powerMatch) return parseFloat(powerMatch[1])
+		const fallbackMatch = solution.match(/([0-9]+(?:\.[0-9]+)?)/)
+		return fallbackMatch ? parseFloat(fallbackMatch[1]) : null
+	}
 
 	const weightedRecurrences = $derived.by<Array<WeightedScalarRecurrence | null>>(() => {
 		const weights = userWeights
@@ -44,6 +50,65 @@
 			weighted ? solveRecurrencesFromStrings(weighted.equation) : null
 		)
 	)
+
+	type RuleCompatibilityIssue = { name: string; reason: string }
+	const incompatibleRules = $derived<RuleCompatibilityIssue[]>(
+		activeRules
+			.map(rule => {
+				const idx = ruleIndexMap.get(rule.name)
+				if (idx === undefined) return null
+				const weighted = weightedRecurrences[idx]
+				const solutionPromise = recurrenceSolutions[idx]
+				if (weighted && solutionPromise) return null
+				return {
+					name: rule.name,
+					reason: !weighted
+						? "Selected weights do not decrease every branch."
+						: "Recurrence solver unavailable for these weights."
+				}
+			})
+			.filter((issue): issue is RuleCompatibilityIssue => issue !== null)
+	)
+
+	type RuleSolutionSummary = { ruleName: string; solution: string; base: number | null }
+	const maxScalarSolution = $derived.by<Promise<RuleSolutionSummary | null> | null>(() => {
+		const candidates = activeRules
+			.map(rule => {
+				const idx = ruleIndexMap.get(rule.name)
+				if (idx === undefined) return null
+				const recurrence = weightedRecurrences[idx]
+				const solutionPromise = recurrenceSolutions[idx]
+				if (!recurrence || !solutionPromise) return null
+				return { ruleName: rule.name, promise: solutionPromise }
+			})
+			.filter((entry): entry is { ruleName: string; promise: Promise<string> } => entry !== null)
+
+		if (!candidates.length) return null
+
+		return Promise.all(
+			candidates.map(async candidate => {
+				const solution = await candidate.promise
+				return {
+					ruleName: candidate.ruleName,
+					solution,
+					base: extractGrowthBase(solution)
+				}
+			})
+		).then(results => {
+			if (!results.length) return null
+			const best = results.reduce<RuleSolutionSummary | null>((current, entry) => {
+				if (!current) return entry
+				if (entry.base === null) return current
+				if (current.base === null || entry.base > current.base) return entry
+				return current
+			}, null)
+			return best ?? results[0]
+		})
+	})
+
+	const setRuleEnabled = (ruleName: string, isEnabled: boolean) => {
+		enabledRules = { ...enabledRules, [ruleName]: isEnabled }
+	}
 </script>
 
 <div class="mx-auto max-w-6xl space-y-12 p-8">
@@ -88,7 +153,7 @@
 					min="0"
 					step="0.1"
 					class="rounded border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:border-emerald-500 focus:outline-none"
-					bind:value={coeffN1} />
+					bind:value={userWeights.w3} />
 			</label>
 			<label
 				class="flex flex-col gap-1 text-xs font-semibold tracking-wide text-gray-600 uppercase">
@@ -98,12 +163,52 @@
 					min="0"
 					step="0.1"
 					class="rounded border border-gray-300 px-3 py-2 text-sm text-gray-800 focus:border-emerald-500 focus:outline-none"
-					bind:value={coeffN2} />
+					bind:value={userWeights.w2} />
 			</label>
 		</div>
 		<p class="mt-3 text-xs text-gray-500">
 			Current measure: <span class="font-mono">n = {userWeights.w3}·n₁ + {userWeights.w2}·n₂</span>
 		</p>
+	</div>
+
+	<div class="rounded-lg border border-purple-200 bg-white p-4 text-sm text-gray-800">
+		<div class="text-xs font-semibold tracking-wide text-purple-700 uppercase">
+			Slowest Custom Solution
+		</div>
+		{#if maxScalarSolution}
+			{#await maxScalarSolution}
+				<p class="mt-2 text-gray-500">Computing aggregate…</p>
+			{:then summary}
+				{#if summary}
+					<p class="mt-2">
+						Worst-case among active rules:
+						<span class="font-semibold">{summary.ruleName}</span>
+					</p>
+					<p class="mt-1 font-mono text-base text-gray-800">{summary.solution}</p>
+				{:else}
+					<p class="mt-2 text-gray-500">No active rule has a solvable scalar recurrence.</p>
+				{/if}
+			{:catch error}
+				<p class="mt-2 text-red-600">
+					Failed to aggregate solutions: {error instanceof Error ? error.message : String(error)}
+				</p>
+			{/await}
+		{:else}
+			<p class="mt-2 text-gray-500">Enable at least one rule with a valid scalar recurrence.</p>
+		{/if}
+		{#if incompatibleRules.length}
+			<div class="mt-3 space-y-1 text-xs text-amber-700">
+				<p class="font-semibold tracking-wide uppercase">Incompatible measure for:</p>
+				<ul class="list-disc space-y-1 pl-5">
+					{#each incompatibleRules as issue (issue.name)}
+						<li>
+							<span class="font-semibold">{issue.name}</span>
+							<span class="text-gray-600">— {issue.reason}</span>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
 	</div>
 
 	<div class="rounded-lg border border-blue-200 bg-white p-4 text-sm text-gray-800">
@@ -125,8 +230,7 @@
 					<div class="space-y-2 rounded-lg border bg-gray-50 p-3">
 						<div class="text-xs font-semibold text-gray-500 uppercase">Missing situation</div>
 						<GraphView
-							root="v"
-							focus={["v"]}
+							roots={["v"]}
 							scale={0.6}
 							nodes={situation.nodes.map((node, idx) => ({
 								...node,
@@ -138,13 +242,26 @@
 			</div>
 		{/if}
 	</div>
-
 	{#each rules as rule, i (rule.name)}
 		{@const analysis = ruleAnalyses[i]}
-		<section class="space-y-8 rounded-xl border border-gray-300 p-6">
-			<header>
-				<h2 class="text-xl font-semibold">{rule.name}</h2>
-				<p class="mt-1 text-gray-600">{rule.description}</p>
+		{@const isRuleEnabled = enabledRules[rule.name] ?? true}
+		<section
+			class={`space-y-8 rounded-xl border border-gray-300 p-6 ${isRuleEnabled ? "" : "opacity-60"}`}>
+			<header class="flex flex-wrap items-start justify-between gap-4">
+				<div>
+					<h2 class="text-xl font-semibold">{rule.name}</h2>
+					<p class="mt-1 text-gray-600">{rule.description}</p>
+				</div>
+				<label
+					class="flex items-center gap-2 text-xs font-semibold tracking-wide text-gray-600 uppercase">
+					<input
+						type="checkbox"
+						class="h-4 w-4 accent-emerald-600"
+						checked={isRuleEnabled}
+						onchange={e =>
+							setRuleEnabled(rule.name, (e.currentTarget as HTMLInputElement).checked)} />
+					<span>Include in analysis</span>
+				</label>
 			</header>
 
 			<div class="rounded-lg border border-dashed bg-white p-4 text-sm">
@@ -185,11 +302,10 @@
 				<h3 class="mb-2 font-medium">Before branching</h3>
 				<div class="mx-auto w-fit space-y-2 rounded-lg border bg-gray-50 p-4">
 					<GraphView
-						root={rule.root}
-						focus={rule.focus ?? [rule.root]}
+						roots={rule.roots}
 						nodes={rule.before.nodes.map(n => ({
 							...n,
-							diff: (rule.focus ?? [rule.root]).includes(n.id) ? "root" : "unchanged"
+							diff: rule.roots.includes(n.id) ? "root" : "unchanged"
 						}))}
 						edges={rule.before.edges} />
 				</div>
@@ -207,8 +323,7 @@
 							<div class="font-semibold">{describeAssignments(branch.assignments)}</div>
 
 							<GraphView
-								root={rule.root}
-								focus={rule.focus ?? [rule.root]}
+								roots={rule.roots}
 								scale={0.65}
 								nodes={branchView.after.nodes}
 								edges={branchView.after.edges} />

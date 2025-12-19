@@ -318,19 +318,19 @@ function combinations<T>(items: readonly T[], k: number) {
  *
  * @param nodes - Nodes forming the local graph.
  * @param edges - Edges describing adjacencies.
- * @param rootId - Identifier of the root vertex.
+ * @param roots - Identifier of the root vertices.
  * @returns Collection of canonical situations derived from this subgraph.
  */
 export function canonicalizeLocalSituations(
-	nodes: GraphNode[],
-	edges: GraphEdge[],
-	rootId: string
+	nodes: readonly GraphNode[],
+	edges: readonly GraphEdge[],
+	roots: readonly string[]
 ) {
 	const nodeLookup = new SvelteMap(nodes.map(node => [node.id, node] as const))
-	const rootNode = nodeLookup.get(rootId)
+	const rootNode = nodeLookup.get(roots[0])
 	if (!rootNode || !isEligibleList(rootNode.colors)) return []
 	const neighbors = buildNeighborsMap(nodes, edges)
-	const eligibleNeighbors = Array.from(neighbors[rootId] ?? []).filter(neighborId => {
+	const eligibleNeighbors = Array.from(neighbors[roots[0]] ?? []).filter(neighborId => {
 		const node = nodeLookup.get(neighborId)
 		return Boolean(node && isEligibleList(node.colors))
 	})
@@ -380,7 +380,7 @@ export function generateAllLocalSituations() {
 						{ from: "root", to: "n1" },
 						{ from: "root", to: "n2" }
 					]
-					const canonicalSituations = canonicalizeLocalSituations(nodes, edges, "root")
+					const canonicalSituations = canonicalizeLocalSituations(nodes, edges, ["root"])
 					for (const situation of canonicalSituations) {
 						if (!seen.has(situation.signature)) seen.set(situation.signature, situation)
 					}
@@ -414,8 +414,7 @@ export function formatBranchingRuleTemplate(situation: CanonicalSituation, index
 	lines.push("{")
 	lines.push(`  name: "Generated rule ${index + 1}",`)
 	lines.push(`  description: "Auto-generated for missing signature ${situation.signature}",`)
-	lines.push('  root: "v",')
-	lines.push('  focus: ["v"],')
+	lines.push('  roots: ["v"],')
 	lines.push("  before: {")
 	lines.push("    nodes: [")
 	appendLiterals(lines, nodeLines, "      ")

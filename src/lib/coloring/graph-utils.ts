@@ -85,12 +85,12 @@ export function computeDegreeMap(nodes: readonly GraphNode[], edges: readonly Gr
 /**
  * Compute the open neighborhood of a set of vertices
  *
- * @param set - A set of vertices, given by their IDs
+ * @param roots - A set of vertices, given by their IDs
  * @param edges - Graph edges describing adjacency.
- * @returns Set of node ids that border a focus vertex.
+ * @returns Set of node ids that are adjacent to a root vertex.
  */
-export function openNeighborhood(set: readonly string[], edges: readonly GraphEdge[]): string[] {
-	const S = new Set<string>(set)
+export function openNeighborhood(roots: readonly string[], edges: readonly GraphEdge[]): string[] {
+	const S = new Set<string>(roots)
 	const neighborhood = new Set<string>()
 	for (const edge of edges) {
 		if (S.has(edge.from)) neighborhood.add(edge.to)
