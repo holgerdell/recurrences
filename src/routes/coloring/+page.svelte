@@ -230,7 +230,6 @@
 					<div class="space-y-2 rounded-lg border bg-gray-50 p-3">
 						<div class="text-xs font-semibold text-gray-500 uppercase">Missing situation</div>
 						<GraphView
-							roots={["v"]}
 							scale={0.6}
 							nodes={situation.nodes.map((node, idx) => ({
 								...node,
@@ -302,10 +301,9 @@
 				<h3 class="mb-2 font-medium">Before branching</h3>
 				<div class="mx-auto w-fit space-y-2 rounded-lg border bg-gray-50 p-4">
 					<GraphView
-						roots={rule.roots}
 						nodes={rule.before.nodes.map(n => ({
 							...n,
-							diff: rule.roots.includes(n.id) ? "root" : "unchanged"
+							diff: n.role === "root" ? "root" : "unchanged"
 						}))}
 						edges={rule.before.edges} />
 				</div>
@@ -323,7 +321,6 @@
 							<div class="font-semibold">{describeAssignments(branch.assignments)}</div>
 
 							<GraphView
-								roots={rule.roots}
 								scale={0.65}
 								nodes={branchView.after.nodes}
 								edges={branchView.after.edges} />

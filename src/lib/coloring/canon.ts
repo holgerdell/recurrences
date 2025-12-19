@@ -323,14 +323,14 @@ function combinations<T>(items: readonly T[], k: number) {
  */
 export function canonicalizeLocalSituations(
 	nodes: readonly GraphNode[],
-	edges: readonly GraphEdge[],
-	roots: readonly string[]
+	edges: readonly GraphEdge[]
 ) {
 	const nodeLookup = new SvelteMap(nodes.map(node => [node.id, node] as const))
-	const rootNode = nodeLookup.get(roots[0])
-	if (!rootNode || !isEligibleList(rootNode.colors)) return []
+	const rootNodes = nodes.filter(n => n.role === "root")
+	const root = rootNodes[0]
+	if (!root || !isEligibleList(root.colors)) return []
 	const neighbors = buildNeighborsMap(nodes, edges)
-	const eligibleNeighbors = Array.from(neighbors[roots[0]] ?? []).filter(neighborId => {
+	const eligibleNeighbors = Array.from(neighbors[root.id] ?? []).filter(neighborId => {
 		const node = nodeLookup.get(neighborId)
 		return Boolean(node && isEligibleList(node.colors))
 	})
@@ -338,7 +338,7 @@ export function canonicalizeLocalSituations(
 	const seen = new SvelteSet<string>()
 	const results: CanonicalSituation[] = []
 	for (const subset of combinations(eligibleNeighbors, 3)) {
-		const canonical = canonicalizeSubset(rootNode, subset, nodeLookup, neighbors)
+		const canonical = canonicalizeSubset(root, subset, nodeLookup, neighbors)
 		if (!canonical) continue
 		if (seen.has(canonical.signature)) continue
 		seen.add(canonical.signature)
@@ -370,17 +370,17 @@ export function generateAllLocalSituations() {
 					if (new SvelteSet(neighborKeys).size !== neighborKeys.length) continue
 					if (rootHasTwoColors && neighborKeyMatchesRoot(neighborNormalized, rootKey)) continue
 					const nodes: GraphNode[] = [
-						{ id: "root", colors: rootColors },
-						{ id: "n0", colors: firstNeighbor },
-						{ id: "n1", colors: secondNeighbor },
-						{ id: "n2", colors: thirdNeighbor }
+						{ id: "root", colors: rootColors, role: "root" },
+						{ id: "n0", colors: firstNeighbor, role: "separator" },
+						{ id: "n1", colors: secondNeighbor, role: "separator" },
+						{ id: "n2", colors: thirdNeighbor, role: "separator" }
 					]
 					const edges: GraphEdge[] = [
 						{ from: "root", to: "n0" },
 						{ from: "root", to: "n1" },
 						{ from: "root", to: "n2" }
 					]
-					const canonicalSituations = canonicalizeLocalSituations(nodes, edges, ["root"])
+					const canonicalSituations = canonicalizeLocalSituations(nodes, edges)
 					for (const situation of canonicalSituations) {
 						if (!seen.has(situation.signature)) seen.set(situation.signature, situation)
 					}

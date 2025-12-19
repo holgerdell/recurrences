@@ -11,6 +11,7 @@ export interface GraphNode {
 	colors: readonly Color[]
 	diff?: "root" | "changed" | "unchanged"
 	removedColors?: readonly Color[]
+	role?: "root" | "separator"
 }
 
 /**

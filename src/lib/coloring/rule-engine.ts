@@ -23,10 +23,8 @@ export interface Branch {
 export interface BranchingRule {
 	name: string
 	description: string
-	roots: readonly string[]
 	before: {
 		nodes: readonly GraphNode[]
-		separator: readonly string[]
 		edges: readonly GraphEdge[]
 	}
 	branches: Branch[]
@@ -134,7 +132,10 @@ function applyBranchWithDiff(
 	rule: BranchingRule,
 	branch: Branch
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
-	const roots = new SvelteSet(rule.roots)
+	const roots = new SvelteSet<string>()
+	for (const n of rule.before.nodes) {
+		if (n.role === "root") roots.add(n.id)
+	}
 	const assignments = branch.assignments
 	const singleAssignments = Object.entries(assignments)
 		.filter(([, colors]) => colors.length === 1)
@@ -321,12 +322,9 @@ function applyBranchWithDiff(
  * @param roots - Root ids whose open neighborhood always qualifies.
  * @returns Measure counting qualifying 3-color and 2-color vertices.
  */
-function computeMeasure(
-	nodes: readonly GraphNode[],
-	edges: readonly GraphEdge[],
-	roots: readonly string[]
-): Measure {
+function computeMeasure(nodes: readonly GraphNode[], edges: readonly GraphEdge[]): Measure {
 	const degrees = computeDegreeMap(nodes, edges)
+	const roots = nodes.filter(n => n.role === "root").map(n => n.id)
 	const nonBranchingVertices = openNeighborhood(roots, edges)
 	let n3 = 0
 	let n2 = 0
@@ -453,11 +451,11 @@ export function buildWeightedScalarRecurrence(
  * @returns Detailed analysis including measure drops, solver text, and invariants.
  */
 export function analyzeRule(rule: BranchingRule): RuleAnalysis {
-	const measureBefore = computeMeasure(rule.before.nodes, rule.before.edges, rule.roots)
+	const measureBefore = computeMeasure(rule.before.nodes, rule.before.edges)
 	const beforeHasColoring = hasProperColoring(rule.before.nodes, rule.before.edges)
 	const branchDetails = rule.branches.map(branch => {
 		const after = applyBranchWithDiff(rule, branch)
-		const measureAfter = computeMeasure(after.nodes, after.edges, rule.roots)
+		const measureAfter = computeMeasure(after.nodes, after.edges)
 		const hasColoring = hasProperColoring(after.nodes, after.edges)
 		const delta: Measure = {
 			n3: measureBefore.n3 - measureAfter.n3,
@@ -513,11 +511,7 @@ export function testBranchingRuleExhaustiveness(
 ): ExhaustivenessReport {
 	const coverage = new SvelteSet<string>()
 	for (const rule of rulesToCheck) {
-		const canonicalSituations = canonicalizeLocalSituations(
-			rule.before.nodes,
-			rule.before.edges,
-			rule.roots
-		)
+		const canonicalSituations = canonicalizeLocalSituations(rule.before.nodes, rule.before.edges)
 		for (const situation of canonicalSituations) coverage.add(situation.signature)
 	}
 	const missing = ALL_LOCAL_SITUATIONS.filter(situation => !coverage.has(situation.signature))

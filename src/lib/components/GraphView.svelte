@@ -8,17 +8,21 @@
 	interface Props {
 		nodes: readonly GraphNode[]
 		edges: readonly GraphEdge[]
-		roots?: readonly string[]
 		scale?: number
 	}
 
-	const { nodes, edges, roots, scale = 1 }: Props = $props()
+	const { nodes, edges, scale = 1 }: Props = $props()
+	const roots = $derived(new SvelteSet(nodes.filter(n => n.role === "root").map(n => n.id)))
+	const separator = $derived(
+		new SvelteSet(nodes.filter(n => n.role === "separator").map(n => n.id))
+	)
 
 	// ============================================================
 	// Layout parameters
 	// ============================================================
 	const NODE_W = 80
 	const NODE_H = 52
+	const HALF_EDGE_LENGTH = 80
 
 	const H_GAP = 100
 	const V_GAP = 24
@@ -40,11 +44,10 @@
 	// BFS distances
 	// ============================================================
 	const distances = $derived.by(() => {
-		const desiredSeeds = roots && roots.length > 0 ? roots : []
 		const seeds: string[] = []
 		const seen = new SvelteSet<string>()
 
-		for (const id of desiredSeeds) {
+		for (const id of roots) {
 			if (seen.has(id)) continue
 			if (!nodes.some(n => n.id === id)) continue
 			seeds.push(id)
@@ -148,7 +151,7 @@
 	// ============================================================
 	const width = $derived.by(() => {
 		if (!positionedNodes.length) return NODE_W
-		return Math.max(...positionedNodes.map(n => n.x + NODE_W))
+		return Math.max(...positionedNodes.map(n => n.x + NODE_W / 2 + HALF_EDGE_LENGTH))
 	})
 
 	const height = $derived.by(() => {
@@ -170,6 +173,30 @@
 					y2={cy(b.y) * scale}
 					stroke="#6b7280"
 					stroke-width="2" />
+			{/if}
+		{/each}
+
+		{#each positionedNodes as n ("separator-" + n.id)}
+			{#if separator.has(n.id)}
+				{@const startX = cx(n.x) * scale}
+				{@const startY = cy(n.y) * scale}
+				{@const offset = HALF_EDGE_LENGTH * scale}
+				<line
+					x1={startX}
+					y1={startY}
+					x2={startX + offset}
+					y2={startY - offset / 4}
+					stroke="#f97316"
+					stroke-width="2"
+					stroke-dasharray="4 3" />
+				<line
+					x1={startX}
+					y1={startY}
+					x2={startX + offset}
+					y2={startY + offset / 4}
+					stroke="#f97316"
+					stroke-width="2"
+					stroke-dasharray="4 3" />
 			{/if}
 		{/each}
 	</svg>
