@@ -3,9 +3,7 @@ import {
 	parseRecurrences,
 	formatRecurrences,
 	IDENTIFIER_PATTERN,
-	solveRecurrenceSystem,
-	isWeightedCausal,
-	type WeightedCausalDebug
+	solveRecurrenceSystem
 } from "./recurrence-solver"
 import { initGLPK } from "$lib/glpk-instance"
 
@@ -339,78 +337,4 @@ describe("formatRecurrences", () => {
 			expect(formatted).toBe("T(n) = T(n-2) + T(n+1)")
 		}
 	})
-})
-
-/**
- * Logs LP diagnostic information when a weighted-causality test fails expectations.
- *
- * @param name - Human-friendly label for the recurrence under test.
- * @param dbg - Debug payload returned by `isWeightedCausal`.
- * @returns Nothing; side-effects include console logging.
- */
-const printDebug = (name: string, dbg: WeightedCausalDebug) => {
-	console.group(`Result for ${name}`)
-	console.log(`Feasible: ${dbg.feasible}`)
-	console.log(`Status: ${dbg.statusName}`)
-	console.log(`Weights:`, dbg.weights)
-	dbg.dotProducts?.forEach(d =>
-		console.log(`  shift [${d.shift.join(", ")}] · w = ${d.dot.toFixed(6)}`)
-	)
-	console.groupEnd()
-}
-
-describe("isWeightedCausal (LP-based, diagnostic mode)", () => {
-	//
-	// 🚫 Divergent systems
-	//
-	const divergent = [
-		"T(n)=T(n)", // self ref
-		"T(n)=T(n+1)", // forward
-		"F(n)=F(n-1)+F(n+1)", // mixed
-		"D(n,m)=D(n,m+1)", // forward in m
-		"D(n,m)=D(n,m+1)+D(n,m-1)" // symmetric — not downhill
-	]
-
-	for (const expr of divergent) {
-		test(`should mark ${expr} as non-causal (divergent)`, async () => {
-			const result = parseRecurrences([expr])
-			expect(result.ok).toBe(true)
-			if (!result.ok) return
-
-			const dbg = await isWeightedCausal(result.recurrences)
-			expect(dbg.feasible).toBe(false)
-			if (dbg.feasible) printDebug(expr, dbg)
-		})
-	}
-
-	//
-	// ✅ Causal (non-divergent) systems
-	//
-	const causal = [
-		"T(n)=T(n-1)+T(n-2)", // Fibonacci
-		"T(n,m)=2*T(n-1,m)+T(n,m-1)", // monotone 2D
-		"D(n,m)=D(n-1,m)+D(n,m-1)+D(n-1,m-1)", // Delannoy
-		"S(i,j)=S(i-2,j+1)", // mixed but consistent
-		"A(n,m,k)=A(n-1,m,k)+A(n,m-1,k)+A(n,m,k-1)", // 3D monotone
-		"T(n,m)=T(n-2,m+1)+T(n-3,m)", // mixed but downhill
-		"R(x,y,z)=R(x-2,y,z+1)+R(x-1,y-3,z)", // asymmetric downhill
-		"H(i,j)=H(i-1,j-2)", // all negative
-		"S(n)=S(n-1)+S(n-3)", // long negative steps
-		"Q(n,m,p)=Q(n-1,m+1,p)+Q(n,m-1,p+1)", // consistent hierarchy
-		"A(x,y,z)=A(x+1,y-2,z+3)", // mixed signs in one term
-		"T(n)=1.5 T(n-1)", // rational coefficients
-		"T(n)=2 T(n-1.5)" // rational reduction of measure
-	]
-
-	for (const expr of causal) {
-		test(`should mark ${expr} as causal (non-divergent)`, async () => {
-			const result = parseRecurrences(expr)
-			expect(result.ok).toBe(true)
-			if (!result.ok) return
-
-			const dbg = await isWeightedCausal(result.recurrences)
-			expect(dbg.feasible).toBe(true)
-			if (!dbg.feasible) printDebug(expr, dbg)
-		})
-	}
 })

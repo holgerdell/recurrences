@@ -1,15 +1,12 @@
 import { Graph, type Color, type GraphEdge, type GraphNode, type NodeId } from "./graph-utils"
-import {
-	ALL_LOCAL_SITUATIONS,
-	buildMissingRuleSnippets as buildMissingRuleSnippetsFromCanon
-} from "./canon"
 import { hasProperColoring } from "./proper-coloring"
+import { ALL_LOCAL_SITUATIONS } from "./3coloring-rules"
 
 /**
  * Represents a single branch within a rule, mapping vertex ids to new color lists.
  */
 export interface Branch {
-	assignments: Record<string, readonly Color[]>
+	assignments: Record<NodeId, readonly Color[]>
 }
 
 /**
@@ -41,9 +38,6 @@ export interface RuleAnalysis {
 	branchDetails: BranchAnalysis[]
 	recurrenceDisplay: string
 	recurrenceEquation: string
-	weightVector?: WeightVector | null
-	solverDisplay?: string
-	solverEquation?: string
 }
 
 /**
@@ -96,18 +90,6 @@ export function describeAssignments(assignments: Record<string, readonly Color[]
 		.sort(([a], [b]) => a.localeCompare(b))
 		.map(([id, colors]) => describeSingleAssignment(id, colors))
 	return entries.join(", ")
-}
-
-/**
- * Formats a linear measure term, omitting coefficients of zero and simplifying ones.
- *
- * @param coefficient - Numeric weight applied to the label.
- * @param label - Symbol such as `n₃` or `n₂`.
- * @returns Display string or null when the term vanishes.
- */
-function formatMeasureTerm(coefficient: number, label: string) {
-	if (coefficient === 0) return null
-	return coefficient === 1 ? label : `${coefficient}·${label}`
 }
 
 // ============================================================
@@ -357,37 +339,6 @@ function buildRecurrenceStrings(deltas: Measure[]) {
 }
 
 /**
- * Checks whether a given weight vector yields strictly positive drops for all branches.
- *
- * @param deltas - Measure deltas per branch.
- * @param weights - Candidate weights applied to (n₃, n₂).
- * @returns True when every weighted drop is positive.
- */
-function isValidWeightVector(deltas: Measure[], weights: WeightVector) {
-	return deltas.every(delta => weights.w3 * delta.n3 + weights.w2 * delta.n2 > 0)
-}
-
-/**
- * Searches a small integer grid for a weight vector that validates all deltas.
- *
- * @param deltas - Measure deltas per branch.
- * @returns Discovered weight vector or null when none work within bounds.
- */
-function findWeightVector(deltas: Measure[]): WeightVector | null {
-	const preferred: WeightVector = { w3: 1, w2: 1 }
-	if (isValidWeightVector(deltas, preferred)) return preferred
-	const MAX_WEIGHT = 12
-	for (let w3 = 1; w3 <= MAX_WEIGHT; w3++) {
-		for (let w2 = 0; w2 <= MAX_WEIGHT; w2++) {
-			if (w3 === preferred.w3 && w2 === preferred.w2) continue
-			const candidate: WeightVector = { w3, w2 }
-			if (isValidWeightVector(deltas, candidate)) return candidate
-		}
-	}
-	return null
-}
-
-/**
  * Projects the measure deltas onto a scalar recurrence using the supplied weights.
  *
  * @param deltas - Measure drops for each branch.
@@ -397,11 +348,10 @@ function findWeightVector(deltas: Measure[]): WeightVector | null {
 export function buildWeightedScalarRecurrence(
 	deltas: Measure[],
 	weights: WeightVector
-): { display: string; equation: string; drops: number[] } {
+): { display: string; equation: string; drops: number[]; decreasing: boolean } {
 	const drops = deltas.map(delta => weights.w3 * delta.n3 + weights.w2 * delta.n2)
 	const counts = new Map<number, number>()
 	for (const drop of drops) {
-		if (drop <= 0) continue
 		counts.set(drop, (counts.get(drop) ?? 0) + 1)
 	}
 	const termEntries = Array.from(counts.entries())
@@ -409,18 +359,21 @@ export function buildWeightedScalarRecurrence(
 		return {
 			display: "T(n) = T(n)",
 			equation: "T(n)=T(n)",
-			drops: []
+			drops: [],
+			decreasing: false
 		}
 	}
 	const terms = termEntries
 		.sort((a, b) => a[0] - b[0])
+		.filter(([, count]) => count !== 0)
 		.map(([drop, count]) => {
 			const base = `T(n-${drop})`
-			return count > 1 ? `${count}*${base}` : base
+			return count !== 1 ? `${count}*${base}` : base
 		})
+	const decreasing = termEntries.every(([drop]) => drop > 0)
 	const display = `T(n) = ${terms.join(" + ")}`
 	const equation = `T(n)=${terms.join("+")}`
-	return { display, equation, drops }
+	return { display, equation, drops, decreasing }
 }
 
 /**
@@ -444,28 +397,12 @@ export function analyzeRule(rule: BranchingRule): RuleAnalysis {
 	})
 	const deltas = branchDetails.map(b => b.delta)
 	const { display, equation } = buildRecurrenceStrings(deltas)
-	const weightVector = findWeightVector(deltas)
-	let solverDisplay: string | undefined
-	let solverEquation: string | undefined
-	if (weightVector) {
-		const weighted = buildWeightedScalarRecurrence(deltas, weightVector)
-		const components = [
-			formatMeasureTerm(weightVector.w3, "n₃"),
-			formatMeasureTerm(weightVector.w2, "n₂")
-		].filter((part): part is string => Boolean(part))
-		const measureLabel = components.join(" + ")
-		solverDisplay = `Measure n = ${measureLabel}: ${weighted.display}`
-		solverEquation = weighted.equation
-	}
 	return {
 		measureBefore,
 		beforeHasColoring,
 		branchDetails,
 		recurrenceDisplay: display,
-		recurrenceEquation: equation,
-		weightVector,
-		solverDisplay,
-		solverEquation
+		recurrenceEquation: equation
 	}
 }
 
@@ -503,14 +440,4 @@ export function testBranchingRuleExhaustiveness(
 		coveredCount: coverage.size,
 		totalSituations: ALL_LOCAL_SITUATIONS.length
 	}
-}
-
-/**
- * Generates code snippets for missing signatures using the canonical generator.
- *
- * @param report - Exhaustiveness report whose missing list will be converted.
- * @returns Array of snippet strings ready to paste into the rules file.
- */
-export function buildMissingRuleSnippets(report: ExhaustivenessReport) {
-	return buildMissingRuleSnippetsFromCanon(report)
 }

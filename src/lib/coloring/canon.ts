@@ -1,16 +1,6 @@
 import { Graph, type Color, type GraphEdge, type GraphNode } from "./graph-utils"
 
 /**
- * Enumerates every color list considered when generating canonical neighborhoods.
- */
-const COLOR_LIST_OPTIONS = [
-	[1, 2, 3],
-	[1, 2],
-	[1, 3],
-	[2, 3]
-] as const
-
-/**
  * Produces one-vertex branching assignments for every color the root can take.
  *
  * @param colors - Available colors for the root node.
@@ -89,46 +79,6 @@ function appendLiterals(lines: string[], items: readonly string[], indent: strin
 		lines.push(`${indent}${literal}${suffix}`)
 	})
 }
-
-/**
- * Exhaustively generates every canonical situation reachable under the eligible color lists.
- *
- * @returns Array of canonical situations representing the complete search space.
- */
-export function* generateAllLocalSituations() {
-	const v = { id: "v", role: "root" } as const
-	const a = { id: "a", role: "separator" } as const
-	const b = { id: "b", role: "separator" } as const
-	const c = { id: "c", role: "separator" } as const
-	const edges = [
-		{ from: "v", to: "a" },
-		{ from: "v", to: "b" },
-		{ from: "v", to: "c" }
-	] as const
-
-	const seen = new Set<string>()
-	for (const rootColors of COLOR_LIST_OPTIONS)
-		for (const aColors of COLOR_LIST_OPTIONS)
-			for (const bColors of COLOR_LIST_OPTIONS)
-				for (const cColors of COLOR_LIST_OPTIONS) {
-					const nodes: GraphNode[] = [
-						{ ...v, colors: rootColors },
-						{ ...a, colors: aColors },
-						{ ...b, colors: bColors },
-						{ ...c, colors: cColors }
-					]
-					const canon = new Graph(nodes, edges).canon()
-					if (!seen.has(canon.signature)) {
-						yield canon
-						seen.add(canon.signature)
-					}
-				}
-}
-
-/**
- * Memoized list of canonical situations produced at module load for reuse.
- */
-export const ALL_LOCAL_SITUATIONS = Array.from(generateAllLocalSituations())
 
 /**
  * Builds a code snippet template for adding a missing branching rule signature.
