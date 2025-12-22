@@ -152,7 +152,7 @@
 	})
 </script>
 
-<div class="relative mx-auto" style={`width:${width * scale}px; height:${height * scale}px`}>
+<div class="relative mx-auto w-fit">
 	<svg width={width * scale} height={height * scale}>
 		{#each graph.edges as e (e.from + "|" + e.to)}
 			{@const a = findNode(e.from)}

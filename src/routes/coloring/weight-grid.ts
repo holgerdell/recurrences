@@ -8,18 +8,21 @@ import {
 	buildRuleIndexMap,
 	extractGrowthBase,
 	GRID_AXIS_COUNT,
+	GRID_SEARCH_STEP,
 	type WeightGridCell
 } from "./weight-grid-shared"
 
 export type GridWorkerInput = {
 	type: "start"
 	activeRuleNames: string[]
+	w3?: number
+	w2?: number
 	axisCount?: number
+	step?: number
 }
 
 export type GridWorkerCellMessage = {
 	type: "cell"
-	index: number
 	cell: WeightGridCell
 }
 
@@ -48,17 +51,29 @@ const ruleColorMap = buildRuleColorMap(allRules)
 
 self.onmessage = async (event: MessageEvent<GridWorkerInput>) => {
 	if (event.data?.type !== "start") return
-	const { activeRuleNames, axisCount = GRID_AXIS_COUNT } = event.data
+	const {
+		activeRuleNames,
+		axisCount = GRID_AXIS_COUNT,
+		step = GRID_SEARCH_STEP,
+		w3: fixedW3,
+		w2: fixedW2
+	} = event.data
 
 	try {
 		let best: { weights?: WeightVector; base: number } = { base: Infinity }
 
-		for (let i = 0; i < axisCount; i += 1) {
-			const w3 = axisValue(i, axisCount)
-			for (let j = 0; j < axisCount; j += 1) {
-				const w2 = axisValue(j, axisCount)
-				const index = i * axisCount + j
+		const w3Values = (() => {
+			if (fixedW3 !== undefined) return [fixedW3]
+			return Array.from({ length: axisCount }, (_, i) => axisValue(i, axisCount, step))
+		})()
 
+		const w2Values = (() => {
+			if (fixedW2 !== undefined) return [fixedW2]
+			return Array.from({ length: axisCount }, (_, j) => axisValue(j, axisCount, step))
+		})()
+
+		for (const w3 of w3Values) {
+			for (const w2 of w2Values) {
 				const cell = await buildCell({
 					w3,
 					w2,
@@ -68,13 +83,10 @@ self.onmessage = async (event: MessageEvent<GridWorkerInput>) => {
 					analyses: ruleAnalyses,
 					ruleColorMap
 				})
-				const message: GridWorkerCellMessage = { type: "cell", index, cell }
-				self.postMessage(message)
+				self.postMessage({ type: "cell", cell })
 				const base = cell.solution ? extractGrowthBase(cell.solution) : null
-				if (base !== null) {
-					if (!best || base < best.base) {
-						best = { weights: { w3: cell.w3, w2: cell.w2 }, base }
-					}
+				if (base !== null && base < best.base) {
+					best = { weights: { w3: cell.w3, w2: cell.w2 }, base }
 				}
 			}
 		}

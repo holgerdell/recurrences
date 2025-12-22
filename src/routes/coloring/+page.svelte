@@ -25,6 +25,7 @@
 		extractGrowthBase,
 		formatWeight,
 		GRID_AXIS_COUNT,
+		GRID_SEARCH_STEP,
 		weightIndex,
 		type WeightGridCell
 	} from "./weight-grid-shared"
@@ -36,6 +37,7 @@
 	const ruleIndexMap = buildRuleIndexMap(allRules)
 	const exhaustivenessReport = $derived(testBranchingRuleExhaustiveness(allRules))
 	const missingRuleSnippets = $derived(buildMissingRuleSnippets(exhaustivenessReport))
+	const MAX_CANVAS_RENDER_PX = 420
 
 	let userWeights = $state<WeightVector>({ w3: 1, w2: 0.6241 })
 	let isWeightSearchRunning = $state(false)
@@ -44,11 +46,24 @@
 
 	let canvasEl: HTMLCanvasElement | null = null
 	let ctx: CanvasRenderingContext2D | null = null
+	let overlayCanvasEl: HTMLCanvasElement | null = null
+	let overlayCtx: CanvasRenderingContext2D | null = null
 	let imageData: ImageData | null = null
+	let imageData32: Uint32Array | null = null
 	let canvasDirty = false
+	let renderScale = 1
+	let pendingHover: { x: number; y: number } | null = null
+	let overlayDrawScheduled = false
+	let lastDrawn: { x: number; y: number } | null = null
+	let pendingCells: Array<{ x: number; y: number; radius: number; color32: number }> = []
+	let cellDrawScheduled = false
 	const cellCache = new SvelteMap<number, WeightGridCell>()
+	const w2ColumnCache = new SvelteMap<number, WeightGridCell>()
 	let hoveredCell = $state<WeightGridCell | null>(null)
-	const PENDING_RGB: [number, number, number] = [229, 231, 235]
+	let autoHoverCell: WeightGridCell | null = null
+	let autoHoverBase: number | null = null
+	let pointerActive = false
+	const PENDING_RGB: [number, number, number] = [255, 255, 255]
 	let resizeListener: (() => void) | null = null
 
 	const hexToRgb = (hex: string): [number, number, number] => {
@@ -56,6 +71,23 @@
 		const num = parseInt(normalized, 16)
 		return [(num >> 16) & 255, (num >> 8) & 255, num & 255]
 	}
+
+	const clampBaseValue = (base: number | null) => {
+		if (base === null || Number.isNaN(base)) return 3
+		if (base > 3) return 3
+		if (base < 1) return 1
+		return base
+	}
+
+	const baseToIndex = (base: number | null, axisCount: number = GRID_AXIS_COUNT) => {
+		const clamped = clampBaseValue(base)
+		const normalized = (clamped - 1) / 2
+		const forward = Math.round(normalized * (axisCount - 1))
+		return Math.min(axisCount - 1, Math.max(0, axisCount - 1 - forward))
+	}
+
+	const rgbToUint32 = ([r, g, b]: [number, number, number]) =>
+		(255 << 24) | (b << 16) | (g << 8) | r
 
 	const clearCanvasBuffer = () => {
 		if (!imageData) return
@@ -77,39 +109,65 @@
 	}
 
 	const initCanvas = () => {
-		if (!canvasEl) return
+		if (!canvasEl || !overlayCanvasEl) return
 		ctx = canvasEl.getContext("2d")
-		if (!ctx) return
+		overlayCtx = overlayCanvasEl.getContext("2d")
+		if (!ctx || !overlayCtx) return
 		ctx.imageSmoothingEnabled = false
+		overlayCtx.imageSmoothingEnabled = false
 		canvasEl.width = GRID_AXIS_COUNT
 		canvasEl.height = GRID_AXIS_COUNT
+		overlayCanvasEl.width = GRID_AXIS_COUNT
+		overlayCanvasEl.height = GRID_AXIS_COUNT
 		canvasEl.style.imageRendering = "pixelated"
+		overlayCanvasEl.style.imageRendering = "pixelated"
 		const resize = () => {
 			const parentWidth =
 				canvasEl?.parentElement?.clientWidth ?? canvasEl?.clientWidth ?? GRID_AXIS_COUNT
-			const scale = Math.max(1, Math.floor(parentWidth / GRID_AXIS_COUNT))
-			canvasEl!.style.width = `${GRID_AXIS_COUNT * scale}px`
-			canvasEl!.style.height = `${GRID_AXIS_COUNT * scale}px`
+			const renderSize = Math.min(parentWidth, MAX_CANVAS_RENDER_PX)
+			renderScale = renderSize / GRID_AXIS_COUNT
+			canvasEl!.style.width = `${renderSize}px`
+			canvasEl!.style.height = `${renderSize}px`
+			overlayCanvasEl!.style.width = `${renderSize}px`
+			overlayCanvasEl!.style.height = `${renderSize}px`
 		}
 		resize()
 		resizeListener = () => resize()
 		window.addEventListener("resize", resizeListener)
 		imageData = ctx.createImageData(GRID_AXIS_COUNT, GRID_AXIS_COUNT)
+		imageData32 = new Uint32Array(imageData.data.buffer)
 		clearCanvasBuffer()
 		flushCanvas()
 	}
 
-	const writeCellToBuffer = (index: number, cell: WeightGridCell) => {
-		if (!imageData) return
-		const x = index % GRID_AXIS_COUNT
-		const y = Math.floor(index / GRID_AXIS_COUNT)
-		const offset = (y * GRID_AXIS_COUNT + x) * 4
-		const [r, g, b] = hexToRgb(cell.color)
-		imageData.data[offset] = r
-		imageData.data[offset + 1] = g
-		imageData.data[offset + 2] = b
-		imageData.data[offset + 3] = 255
-		canvasDirty = true
+	const writeCellToBuffer = (x: number, y: number, cell: WeightGridCell) => {
+		if (!imageData32) return
+		const radius = Math.max(1, Math.round(1 / Math.max(renderScale, 0.0001)))
+		const color32 = rgbToUint32(hexToRgb(cell.color))
+		pendingCells.push({ x, y, radius, color32 })
+		if (cellDrawScheduled) return
+		cellDrawScheduled = true
+		requestAnimationFrame(() => {
+			if (!imageData32) {
+				cellDrawScheduled = false
+				return
+			}
+			while (pendingCells.length) {
+				const { x: cx, y: cy, radius: r, color32: c32 } = pendingCells.pop()!
+				const yStart = Math.max(0, cy - r)
+				const yEnd = Math.min(GRID_AXIS_COUNT - 1, cy + r)
+				const xStart = Math.max(0, cx - r)
+				const xEnd = Math.min(GRID_AXIS_COUNT - 1, cx + r)
+				for (let ny = yStart; ny <= yEnd; ny++) {
+					const rowOffset = ny * GRID_AXIS_COUNT
+					for (let nx = xStart; nx <= xEnd; nx++) {
+						imageData32[rowOffset + nx] = c32
+					}
+				}
+			}
+			canvasDirty = true
+			cellDrawScheduled = false
+		})
 	}
 
 	const handleCanvasHover = (event: MouseEvent) => {
@@ -117,14 +175,73 @@
 		const rect = canvasEl.getBoundingClientRect()
 		const scale = rect.width / GRID_AXIS_COUNT
 		const x = Math.floor((event.clientX - rect.left) / scale)
-		const y = Math.floor((event.clientY - rect.top) / scale)
-		if (x < 0 || y < 0 || x >= GRID_AXIS_COUNT || y >= GRID_AXIS_COUNT) {
+		if (x < 0 || x >= GRID_AXIS_COUNT) {
+			pointerActive = false
+			applyAutoHover()
+			return
+		}
+		const cell = w2ColumnCache.get(x)
+		if (!cell) {
+			pointerActive = false
+			applyAutoHover()
+			return
+		}
+		pointerActive = true
+		hoveredCell = cell
+		const base = cell.solution ? extractGrowthBase(cell.solution) : null
+		const y = baseToIndex(base)
+		drawHoverLine(x, y)
+	}
+
+	const clearOverlay = () => {
+		if (!overlayCtx || !overlayCanvasEl) return
+		overlayCtx.clearRect(0, 0, overlayCanvasEl.width, overlayCanvasEl.height)
+		lastDrawn = null
+	}
+
+	const drawHoverLine = (x: number, y: number) => {
+		if (!overlayCtx || !overlayCanvasEl) return
+		if (lastDrawn && lastDrawn.x === x && lastDrawn.y === y) return
+		pendingHover = { x, y }
+		if (overlayDrawScheduled) return
+		overlayDrawScheduled = true
+		requestAnimationFrame(() => {
+			if (!overlayCtx || !overlayCanvasEl || !pendingHover) {
+				overlayDrawScheduled = false
+				return
+			}
+			const { x: px, y: py } = pendingHover
+			pendingHover = null
+			clearOverlay()
+			overlayCtx.strokeStyle = "rgba(17, 24, 39, 0.6)"
+			const width = Math.max(2, Math.round(2 / Math.max(renderScale, 0.0001)))
+			overlayCtx.lineWidth = width
+			overlayCtx.beginPath()
+			overlayCtx.moveTo(px + 0.5, GRID_AXIS_COUNT - 0.5)
+			overlayCtx.lineTo(px + 0.5, py + 0.5)
+			overlayCtx.stroke()
+			lastDrawn = { x: px, y: py }
+			overlayDrawScheduled = false
+		})
+	}
+
+	const applyAutoHover = () => {
+		if (!autoHoverCell) {
+			clearOverlay()
 			hoveredCell = null
 			return
 		}
-		const idx = y * GRID_AXIS_COUNT + x
-		const cell = cellCache.get(idx) ?? weightGrid[idx]
-		hoveredCell = cell ?? null
+		const base =
+			autoHoverBase ?? (autoHoverCell.solution ? extractGrowthBase(autoHoverCell.solution) : null)
+		if (base === null) {
+			clearOverlay()
+			hoveredCell = autoHoverCell
+			return
+		}
+		const j = weightIndex(autoHoverCell.w2)
+		const y = baseToIndex(base)
+		hoveredCell = autoHoverCell
+		drawHoverLine(j, y)
 	}
 
 	const weightedRecurrences = $derived(
@@ -156,10 +273,8 @@
 
 	const limitingCell = $derived.by(() => {
 		if (isWeightSearchRunning) return null
-		const i = weightIndex(userWeights.w3)
 		const j = weightIndex(userWeights.w2)
-		const idx = i * GRID_AXIS_COUNT + j
-		return weightGrid[idx] ?? null
+		return w2ColumnCache.get(j) ?? null
 	})
 
 	const hoveredRule = $derived.by(() => {
@@ -179,6 +294,11 @@
 		isWeightSearchRunning = true
 		weightGrid = buildInitialWeightGrid()
 		cellCache.clear()
+		w2ColumnCache.clear()
+		autoHoverCell = null
+		autoHoverBase = null
+		hoveredCell = null
+		pointerActive = false
 		clearCanvasBuffer()
 		initCanvas()
 		let best: { weights: WeightVector | null; base: number } = { weights: null, base: Infinity }
@@ -186,11 +306,22 @@
 		worker.onmessage = (event: MessageEvent<GridWorkerMessage>) => {
 			const message = event.data
 			if (message.type === "cell") {
-				const { index, cell } = message as GridWorkerCellMessage
-				weightGrid[index] = cell
-				cellCache.set(index, cell)
-				writeCellToBuffer(index, cell)
+				const { cell } = message as GridWorkerCellMessage
 				const base = cell.solution ? extractGrowthBase(cell.solution) : null
+				const i = baseToIndex(base)
+				const j = weightIndex(cell.w2)
+				weightGrid[j] = cell
+				cellCache.set(j, cell)
+				w2ColumnCache.set(j, cell)
+				writeCellToBuffer(j, i, cell)
+				if (base !== null && (autoHoverBase === null || base < autoHoverBase)) {
+					autoHoverBase = base
+					autoHoverCell = cell
+					if (!pointerActive) {
+						hoveredCell = autoHoverCell
+						drawHoverLine(j, i)
+					}
+				}
 				if (base !== null && (best.weights === null || base < best.base)) {
 					best = { weights: { w3: cell.w3, w2: cell.w2 }, base }
 				}
@@ -211,7 +342,9 @@
 		const payload: GridWorkerInput = {
 			type: "start",
 			axisCount: GRID_AXIS_COUNT,
-			activeRuleNames
+			step: GRID_SEARCH_STEP,
+			activeRuleNames,
+			w3: 1
 		}
 		worker.postMessage(payload)
 	})
@@ -226,7 +359,7 @@
 	})
 </script>
 
-<div class="mx-auto max-w-6xl space-y-12 p-8">
+<div class="mx-auto max-w-6xl space-y-12 sm:p-8">
 	<h1 class="text-3xl font-bold">Branching Rules for List 3‑Coloring</h1>
 
 	<p class="text-gray-700">
@@ -340,7 +473,7 @@
 				{#each exhaustivenessReport.missing.slice(0, 6) as situation (situation.signature())}
 					<div class="space-y-2 rounded-lg border bg-gray-50 p-3">
 						<div class="text-xs font-semibold text-gray-500 uppercase">Missing situation</div>
-						<GraphView graph={situation} scale={0.6} />
+						<GraphView graph={situation} scale={0.55} />
 					</div>
 				{/each}
 			</div>
@@ -348,24 +481,26 @@
 	</div>
 
 	<div class="rounded-lg border border-amber-200 bg-white p-4 text-sm text-gray-800">
-		<div class="text-xs font-semibold tracking-wide text-amber-700 uppercase">
-			Weight Grid Explorer
-		</div>
+		<div class="text-xs font-semibold tracking-wide text-amber-700 uppercase">Weight Explorer</div>
 		<p class="mt-2">
-			Each “pixel” shows the worst-case rule for a weight pair. Hover to see the limiting rule and
-			recurrence for that weight choice. Gray cells indicate invalid weights that fail to decrease
-			every branch.
+			Each pixel plots the limiting rule for a given w₂ column and the resulting base on the
+			vertical axis. Hover to see the limiting rule, recurrence, and base.
 		</p>
 		<div class="mt-4 space-y-3">
 			<div class="relative">
 				<canvas
 					bind:this={canvasEl}
-					class="w-full overflow-hidden rounded border border-gray-200 bg-white"
+					class="mx-auto w-full overflow-hidden rounded border bg-white"
 					onmousemove={handleCanvasHover}
 					onmouseleave={() => {
-						hoveredCell = null
+						pointerActive = false
+						applyAutoHover()
 					}}
 					aria-label="Weight grid heatmap"></canvas>
+				<canvas
+					bind:this={overlayCanvasEl}
+					class="pointer-events-none absolute inset-0 mx-auto w-full overflow-hidden rounded border border-transparent"
+					aria-hidden="true"></canvas>
 			</div>
 			<div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800">
 				{#if hoveredCell}
@@ -401,13 +536,8 @@
 								<div class="mt-3 space-y-2">
 									<div class="text-sm font-semibold text-gray-600">Branches</div>
 									<div class="flex flex-col flex-wrap gap-3">
-										{#each hoveredRule.branches as branch, j (branch.assignments)}
-											<!-- <div class="min-w-40 flex-1 space-y-1 rounded border bg-white p-2"> -->
-											<!-- <div class="text-xs font-semibold text-gray-700"> -->
+										{#each hoveredRule.branches as branch (branch.assignments)}
 											<div>{describeAssignments(branch.assignments)}</div>
-											<!-- </div> -->
-											<!-- <GraphView graph={hoveredAnalysis.branchDetails[j].after} scale={0.2} /> -->
-											<!-- </div> -->
 										{/each}
 									</div>
 								</div>
@@ -420,7 +550,7 @@
 			</div>
 			<div
 				class="flex items-center justify-between text-[10px] font-semibold tracking-wide text-gray-500 uppercase">
-				<span>w₃ increases ↓</span>
+				<span>Base increases ↑</span>
 				<span>w₂ increases →</span>
 			</div>
 		</div>
@@ -431,7 +561,7 @@
 
 	{#each allRules as rule, i (rule.name)}
 		{@const analysis = ruleAnalyses[i]}
-		<section class="space-y-8 rounded-xl border border-gray-300 p-6">
+		<section class="space-y-8 overflow-clip rounded-xl border border-gray-300 p-6">
 			<header class="flex flex-wrap items-start justify-between gap-4">
 				<div>
 					<h2 class="text-xl font-semibold">{rule.name}</h2>
@@ -475,8 +605,8 @@
 			<!-- BEFORE -->
 			<div>
 				<h3 class="mb-2 font-medium">Before branching</h3>
-				<div class="mx-auto w-fit space-y-2 rounded-lg border bg-gray-50 p-4">
-					<GraphView graph={rule.before} />
+				<div class="mx-auto w-fit space-y-2 rounded-lg bg-gray-50 p-2 ring">
+					<GraphView graph={rule.before} scale={0.55} />
 				</div>
 			</div>
 
@@ -484,11 +614,11 @@
 			<div>
 				<h3 class="mb-3 font-medium">After branching</h3>
 
-				<div class="flex flex-wrap gap-6">
+				<div class="mx-auto flex flex-row flex-wrap justify-center gap-2">
 					{#each rule.branches as branch, j (branch.assignments)}
-						<div class="flex-1 space-y-2 rounded-lg bg-gray-50 p-2 ring ring-amber-300">
+						<div class="w-fit space-y-2 rounded-lg bg-gray-50 p-2 ring ring-amber-300">
 							<div class="font-semibold">{describeAssignments(branch.assignments)}</div>
-							<GraphView graph={analysis.branchDetails[j].after} scale={0.65} />
+							<GraphView graph={analysis.branchDetails[j].after} scale={0.55} />
 						</div>
 					{/each}
 				</div>

@@ -26,7 +26,7 @@ jobs:
         run: |
           bun install --frozen-lockfile
       - name: Build 🔧
-        run: bun run build --mode production --base /recurrences/
+        run: bun run --bun build --mode production --base /recurrences/
       - name: Upload static files as artifact
         id: deployment
         uses: actions/upload-pages-artifact@v4

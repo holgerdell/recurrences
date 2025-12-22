@@ -22,8 +22,8 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-<div class="h-dvh w-dvw">
-	<div class="mx-auto min-h-full w-full max-w-2xl bg-slate-100">
+<div class="min-h-dvh w-dvw bg-slate-100">
+	<div class="mx-auto min-h-full w-full max-w-3xl">
 		<!-- <header class="flex flex-row flex-wrap gap-8 bg-white">
 			{#each links as { href, text, exact } (href)}
 				<a
@@ -36,7 +36,7 @@
 			{/each}
 		</header> -->
 
-		<main class="p-10">
+		<main>
 			{@render children()}
 		</main>
 	</div>

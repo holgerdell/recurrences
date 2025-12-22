@@ -15,8 +15,8 @@ export type WeightGridCell = {
 	tooltip: string
 }
 
-export const GRID_AXIS_COUNT = 100
-export const GRID_SEARCH_STEP = 0.01
+export const GRID_AXIS_COUNT = 10000
+export const GRID_SEARCH_STEP = 0.0001
 export const INVALID_WEIGHT_COLOR = "#9ca3af"
 export const DEFAULT_RULE_COLOR = "#1f2937"
 export const ruleColorPalette = [
@@ -30,8 +30,8 @@ export const ruleColorPalette = [
 	"#999999"
 ] as const
 
-export const quantizeWeight = (value: number) => Number(value.toFixed(2))
-export const formatWeight = (value: number) => value.toFixed(2)
+export const quantizeWeight = (value: number) => Number(value.toFixed(4))
+export const formatWeight = (value: number) => value.toFixed(4)
 export const axisValue = (
 	index: number,
 	axisCount: number = GRID_AXIS_COUNT,
@@ -84,14 +84,11 @@ export function createBaseCell(w3: number, w2: number): WeightGridCell {
 	}
 }
 
-export function buildInitialWeightGrid(axisCount: number = GRID_AXIS_COUNT) {
+export function buildInitialWeightGrid(axisCount: number = GRID_AXIS_COUNT, w3: number = 1) {
 	const cells: WeightGridCell[] = []
-	for (let i = 0; i < axisCount; i += 1) {
-		const w3 = axisValue(i, axisCount)
-		for (let j = 0; j < axisCount; j += 1) {
-			const w2 = axisValue(j, axisCount)
-			cells.push(createBaseCell(w3, w2))
-		}
+	for (let j = 0; j < axisCount; j += 1) {
+		const w2 = axisValue(j, axisCount)
+		cells.push(createBaseCell(w3, w2))
 	}
 	return cells
 }
