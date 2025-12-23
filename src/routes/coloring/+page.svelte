@@ -49,13 +49,18 @@
 	let overlayCanvasEl: HTMLCanvasElement | null = null
 	let overlayCtx: CanvasRenderingContext2D | null = null
 	let imageData: ImageData | null = null
-	let imageData32: Uint32Array | null = null
 	let canvasDirty = false
+	let flushScheduled = false
 	let renderScale = 1
 	let pendingHover: { x: number; y: number } | null = null
 	let overlayDrawScheduled = false
 	let lastDrawn: { x: number; y: number } | null = null
-	let pendingCells: Array<{ x: number; y: number; radius: number; color32: number }> = []
+	let pendingCells: Array<{
+		x: number
+		y: number
+		radius: number
+		color: [number, number, number]
+	}> = []
 	let cellDrawScheduled = false
 	const cellCache = new SvelteMap<number, WeightGridCell>()
 	const w2ColumnCache = new SvelteMap<number, WeightGridCell>()
@@ -86,8 +91,14 @@
 		return Math.min(axisCount - 1, Math.max(0, axisCount - 1 - forward))
 	}
 
-	const rgbToUint32 = ([r, g, b]: [number, number, number]) =>
-		(255 << 24) | (b << 16) | (g << 8) | r
+	const writePixel = (x: number, y: number, [r, g, b]: [number, number, number]) => {
+		if (!imageData) return
+		const idx = (y * GRID_AXIS_COUNT + x) * 4
+		imageData.data[idx] = r
+		imageData.data[idx + 1] = g
+		imageData.data[idx + 2] = b
+		imageData.data[idx + 3] = 255
+	}
 
 	const clearCanvasBuffer = () => {
 		if (!imageData) return
@@ -98,14 +109,20 @@
 			imageData.data[i + 3] = 255
 		}
 		canvasDirty = true
+		scheduleFlushCanvas()
 	}
 
-	const flushCanvas = () => {
-		if (ctx && imageData && canvasDirty) {
-			ctx.putImageData(imageData, 0, 0)
-			canvasDirty = false
-		}
-		requestAnimationFrame(flushCanvas)
+	const scheduleFlushCanvas = () => {
+		if (flushScheduled || !canvasDirty) return
+		flushScheduled = true
+		requestAnimationFrame(() => {
+			flushScheduled = false
+			if (ctx && imageData && canvasDirty) {
+				ctx.putImageData(imageData, 0, 0)
+				canvasDirty = false
+			}
+			if (canvasDirty) scheduleFlushCanvas()
+		})
 	}
 
 	const initCanvas = () => {
@@ -135,37 +152,35 @@
 		resizeListener = () => resize()
 		window.addEventListener("resize", resizeListener)
 		imageData = ctx.createImageData(GRID_AXIS_COUNT, GRID_AXIS_COUNT)
-		imageData32 = new Uint32Array(imageData.data.buffer)
 		clearCanvasBuffer()
-		flushCanvas()
 	}
 
 	const writeCellToBuffer = (x: number, y: number, cell: WeightGridCell) => {
-		if (!imageData32) return
+		if (!imageData) return
 		const radius = Math.max(1, Math.round(1 / Math.max(renderScale, 0.0001)))
-		const color32 = rgbToUint32(hexToRgb(cell.color))
-		pendingCells.push({ x, y, radius, color32 })
+		const color = hexToRgb(cell.color)
+		pendingCells.push({ x, y, radius, color })
 		if (cellDrawScheduled) return
 		cellDrawScheduled = true
 		requestAnimationFrame(() => {
-			if (!imageData32) {
+			if (!imageData) {
 				cellDrawScheduled = false
 				return
 			}
 			while (pendingCells.length) {
-				const { x: cx, y: cy, radius: r, color32: c32 } = pendingCells.pop()!
+				const { x: cx, y: cy, radius: r, color } = pendingCells.pop()!
 				const yStart = Math.max(0, cy - r)
 				const yEnd = Math.min(GRID_AXIS_COUNT - 1, cy + r)
 				const xStart = Math.max(0, cx - r)
 				const xEnd = Math.min(GRID_AXIS_COUNT - 1, cx + r)
 				for (let ny = yStart; ny <= yEnd; ny++) {
-					const rowOffset = ny * GRID_AXIS_COUNT
 					for (let nx = xStart; nx <= xEnd; nx++) {
-						imageData32[rowOffset + nx] = c32
+						writePixel(nx, ny, color)
 					}
 				}
 			}
 			canvasDirty = true
+			scheduleFlushCanvas()
 			cellDrawScheduled = false
 		})
 	}
@@ -483,8 +498,8 @@
 	<div class="rounded-lg border border-amber-200 bg-white p-4 text-sm text-gray-800">
 		<div class="text-xs font-semibold tracking-wide text-amber-700 uppercase">Weight Explorer</div>
 		<p class="mt-2">
-			Each pixel plots the limiting rule for a given w₂ column and the resulting base on the
-			vertical axis. Hover to see the limiting rule, recurrence, and base.
+			This plot plots the base b of the running time O(b^n) as a function of w₂. Hover to see the
+			branching rule that limits the running time.
 		</p>
 		<div class="mt-4 space-y-3">
 			<div class="relative">
@@ -505,7 +520,7 @@
 			<div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800">
 				{#if hoveredCell}
 					<div class="flex items-start gap-2">
-						<span
+						Limiting rule: <span
 							class="mt-0.5 h-3.5 w-3.5 rounded-sm"
 							style={`background-color: ${hoveredCell.color};`}
 							aria-hidden="true"></span>
