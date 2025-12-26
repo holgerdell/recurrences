@@ -13,6 +13,8 @@ export interface Branch {
  * Declares the structure of a branching rule, including visualization metadata.
  */
 export interface BranchingRule {
+	situationId: number
+	ruleId: number
 	name: string
 	description: string
 	before: Graph
@@ -32,7 +34,7 @@ export interface BranchAnalysis {
 /**
  * Summarizes analyzer output for an entire rule and its recurrence impact.
  */
-export interface RuleAnalysis {
+export interface BranchingRuleWithAnalysis extends BranchingRule {
 	measureBefore: Measure
 	beforeHasColoring: boolean
 	branchDetails: BranchAnalysis[]
@@ -43,7 +45,8 @@ export interface RuleAnalysis {
 /**
  * Two-component measure tracking how many degree-qualified vertices have 3 or 2 colors.
  */
-export interface Measure {
+export type Measure = {
+	n4: number
 	n3: number
 	n2: number
 }
@@ -51,7 +54,8 @@ export interface Measure {
 /**
  * Weight assignment used to project two-dimensional measures into a scalar recurrence.
  */
-export interface WeightVector {
+export type WeightVector = {
+	w4: number
 	w3: number
 	w2: number
 }
@@ -263,6 +267,12 @@ function applyBranchWithDiff(rule: BranchingRule, branch: Branch): Graph {
 	const dedupedEdgesMap = new Map<string, GraphEdge>()
 	for (const edge of workingEdges) {
 		if (!nodesById.has(edge.from) || !nodesById.has(edge.to)) continue
+		if (
+			new Set(nodesById.get(edge.from)?.colors).isDisjointFrom(
+				new Set(nodesById.get(edge.to)?.colors)
+			)
+		)
+			continue
 		const [low, high] = edge.from < edge.to ? [edge.from, edge.to] : [edge.to, edge.from]
 		const key = `${low}|${high}`
 		if (!dedupedEdgesMap.has(key)) dedupedEdgesMap.set(key, edge)
@@ -283,19 +293,17 @@ function applyBranchWithDiff(rule: BranchingRule, branch: Branch): Graph {
  * @returns Measure counting qualifying 3-color and 2-color vertices.
  */
 function computeMeasure(G: Graph): Measure {
-	const roots = Array.from(G.nodes)
-		.filter(n => n.role === "root")
-		.map(n => n.id)
-	const nonBranchingVertices = G.openNeighborhood(roots)
+	let n4 = 0
 	let n3 = 0
 	let n2 = 0
 	for (const node of G.nodes) {
-		const qualifies = G.degree(node.id) >= 3 || nonBranchingVertices.has(node.id)
+		const qualifies = G.degree(node.id) >= 3
 		if (!qualifies) continue
-		if (node.colors.length === 3) n3 += 1
+		if (node.colors.length === 4) n4 += 1
+		else if (node.colors.length === 3) n3 += 1
 		else if (node.colors.length === 2) n2 += 1
 	}
-	return { n3, n2 }
+	return { n4, n3, n2 }
 }
 
 /**
@@ -319,20 +327,20 @@ function buildRecurrenceStrings(deltas: Measure[]) {
 		else map.set(key, { key, delta, count: 1 })
 	}
 
-	const makeArg = (label: "n3" | "n2", drop: number) => {
-		const displayLabel = label === "n3" ? "n₃" : "n₂"
+	const makeArg = (label: "n4" | "n3" | "n2", drop: number) => {
+		const displayLabel = label === "n4" ? "n₄" : label === "n3" ? "n₃" : "n₂"
 		if (drop === 0) return displayLabel
 		return drop < 0 ? `${displayLabel}+${-drop}` : `${displayLabel}-${drop}`
 	}
 
 	const terms = Array.from(map.values())
-		.sort((a, b) => a.delta.n3 - b.delta.n3 || a.delta.n2 - b.delta.n2)
+		// .sort((a, b) => a.delta.n3 - b.delta.n3 || a.delta.n2 - b.delta.n2)
 		.map(({ delta, count }) => {
-			const base = `T(${makeArg("n3", delta.n3)},${makeArg("n2", delta.n2)})`
+			const base = `T(${makeArg("n4", delta.n4)},${makeArg("n3", delta.n3)},${makeArg("n2", delta.n2)})`
 			return count > 1 ? `${count}*${base}` : base
 		})
 
-	const lhs = "T(n₃,n₂)"
+	const lhs = "T(n₄,n₃,n₂)"
 	const display = `${lhs} = ${terms.join(" + ")}`
 	const equation = `${lhs}=${terms.join("+")}`
 	return { display, equation }
@@ -345,11 +353,13 @@ function buildRecurrenceStrings(deltas: Measure[]) {
  * @param weights - Weight vector defining the scalar measure.
  * @returns Display/equation strings plus the list of drops.
  */
-export function buildWeightedScalarRecurrence(
+export function buildScalarRecurrence(
 	deltas: Measure[],
 	weights: WeightVector
-): { display: string; equation: string; drops: number[]; decreasing: boolean } {
-	const drops = deltas.map(delta => weights.w3 * delta.n3 + weights.w2 * delta.n2)
+): { equation: string; drops: number[]; decreasing: boolean } {
+	const drops = deltas.map(
+		delta => weights.w4 * delta.n4 + weights.w3 * delta.n3 + weights.w2 * delta.n2
+	)
 	const counts = new Map<number, number>()
 	for (const drop of drops) {
 		counts.set(drop, (counts.get(drop) ?? 0) + 1)
@@ -357,7 +367,6 @@ export function buildWeightedScalarRecurrence(
 	const termEntries = Array.from(counts.entries())
 	if (termEntries.length === 0) {
 		return {
-			display: "T(n) = T(n)",
 			equation: "T(n)=T(n)",
 			drops: [],
 			decreasing: false
@@ -371,9 +380,8 @@ export function buildWeightedScalarRecurrence(
 			return count !== 1 ? `${count}*${base}` : base
 		})
 	const decreasing = termEntries.every(([drop]) => drop > 0)
-	const display = `T(n) = ${terms.join(" + ")}`
 	const equation = `T(n)=${terms.join("+")}`
-	return { display, equation, drops, decreasing }
+	return { equation, drops, decreasing }
 }
 
 /**
@@ -382,7 +390,7 @@ export function buildWeightedScalarRecurrence(
  * @param rule - Branching rule to analyze.
  * @returns Detailed analysis including measure drops, solver text, and invariants.
  */
-export function analyzeRule(rule: BranchingRule): RuleAnalysis {
+export function analyzeRule(rule: BranchingRule): BranchingRuleWithAnalysis {
 	const measureBefore = computeMeasure(rule.before)
 	const beforeHasColoring = hasProperColoring(rule.before)
 	const branchDetails = rule.branches.map(branch => {
@@ -390,6 +398,7 @@ export function analyzeRule(rule: BranchingRule): RuleAnalysis {
 		const measureAfter = computeMeasure(after)
 		const hasColoring = hasProperColoring(after)
 		const delta: Measure = {
+			n4: measureBefore.n4 - measureAfter.n4,
 			n3: measureBefore.n3 - measureAfter.n3,
 			n2: measureBefore.n2 - measureAfter.n2
 		}
@@ -398,6 +407,7 @@ export function analyzeRule(rule: BranchingRule): RuleAnalysis {
 	const deltas = branchDetails.map(b => b.delta)
 	const { display, equation } = buildRecurrenceStrings(deltas)
 	return {
+		...rule,
 		measureBefore,
 		beforeHasColoring,
 		branchDetails,
@@ -412,7 +422,7 @@ export function analyzeRule(rule: BranchingRule): RuleAnalysis {
  * @param rulesToAnalyze - Rules queued for analysis.
  * @returns Array of rule analysis results in the same order as input.
  */
-export function analyzeRules(rulesToAnalyze: BranchingRule[]): RuleAnalysis[] {
+export function analyzeRules(rulesToAnalyze: BranchingRule[]): BranchingRuleWithAnalysis[] {
 	return rulesToAnalyze.map(rule => analyzeRule(rule))
 }
 

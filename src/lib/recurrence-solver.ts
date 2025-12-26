@@ -9,8 +9,7 @@ import {
 	type PolynomialTerm,
 	type PolynomialSystem,
 	type Root,
-	dominantRoot,
-	formatAsymptotics
+	dominantRoot
 } from "./root-finding"
 
 // ======================================================
@@ -352,11 +351,22 @@ export async function solveRecurrenceSystem(
  * @param lines - Source lines containing recurrence equations
  * @returns Asymptotic big-O string or an error message
  */
-export async function solveRecurrencesFromStrings(lines: string): Promise<string> {
+export async function solveRecurrencesFromStrings(
+	lines: string
+): Promise<
+	| { ok: true; root: Root; divergent: false }
+	| { ok: true; divergent: true }
+	| { ok: false; error: string }
+> {
 	const parsed = parseRecurrences(lines)
-	if (!parsed.ok) return Promise.resolve(`Error: ${parsed.error}`)
-	return solveRecurrenceSystem(parsed.recurrences).then(roots => {
-		if (roots === "divergent") return "divergent"
-		return formatAsymptotics(roots)
+	if (!parsed.ok) return Promise.resolve({ ok: false, error: parsed.error })
+	return solveRecurrenceSystem(parsed.recurrences).then(r => {
+		if (r === "divergent") {
+			return { ok: true, divergent: true }
+		} else if (r === null) {
+			return { ok: false, error: "Returned null for unknown reason" }
+		} else {
+			return { ok: true, root: r, divergent: false }
+		}
 	})
 }

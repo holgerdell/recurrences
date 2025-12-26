@@ -173,22 +173,21 @@
 				{@const startX = cx(n.x) * scale}
 				{@const startY = cy(n.y) * scale}
 				{@const offset = HALF_EDGE_LENGTH * scale}
-				<line
-					x1={startX}
-					y1={startY}
-					x2={startX + offset}
-					y2={startY - offset / 4}
-					stroke="#f97316"
-					stroke-width="2"
-					stroke-dasharray="4 3" />
-				<line
-					x1={startX}
-					y1={startY}
-					x2={startX + offset}
-					y2={startY + offset / 4}
-					stroke="#f97316"
-					stroke-width="2"
-					stroke-dasharray="4 3" />
+				{@const halfedges = n.halfedges ?? 0}
+				{#if halfedges > 0}
+					{@const span = offset / 2}
+					{@const step = halfedges > 1 ? span / (halfedges - 1) : 0}
+					{#each Array.from({ length: halfedges }, (_, i) => startY - offset / 4 + i * step) as yOffset (yOffset)}
+						<line
+							x1={startX}
+							y1={startY}
+							x2={startX + offset}
+							y2={yOffset}
+							stroke="#f97316"
+							stroke-width="2"
+							stroke-dasharray="4 3" />
+					{/each}
+				{/if}
 			{/if}
 		{/each}
 	</svg>

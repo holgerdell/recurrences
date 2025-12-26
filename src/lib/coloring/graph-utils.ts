@@ -3,7 +3,7 @@
  */
 export type Color = 1 | 2 | 3 | 4
 export type NodeId = string
-const COLOR_DOMAIN = [1, 2, 3] as const
+export const COLOR_DOMAIN = [1, 2, 3, 4] as const
 
 /**
  * Minimal node representation used by both the rule engine and graph utilities.
@@ -14,6 +14,7 @@ export interface GraphNode {
 	diff?: "changed" | "unchanged"
 	removedColors?: readonly Color[]
 	role?: "root" | "separator"
+	halfedges?: number
 }
 
 /**
@@ -77,7 +78,7 @@ export class Graph {
 	}
 
 	degree(id: NodeId) {
-		return this._neighbors[id].size
+		return this._neighbors[id].size + (this._nodeById[id].halfedges ?? 0)
 	}
 
 	openNeighborhood(roots: readonly NodeId[]): Set<NodeId> {
