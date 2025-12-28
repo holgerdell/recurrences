@@ -1,6 +1,5 @@
 import { Graph, type Color, type GraphEdge, type GraphNode, type NodeId } from "./graph-utils"
 import { hasProperColoring } from "./proper-coloring"
-import { ALL_LOCAL_SITUATIONS } from "./3coloring-rules"
 
 /**
  * Represents a single branch within a rule, mapping vertex ids to new color lists.
@@ -15,6 +14,7 @@ export interface Branch {
 export interface BranchingRule {
 	situationId: number
 	ruleId: number
+	situationRuleId: number
 	name: string
 	description: string
 	before: Graph
@@ -58,17 +58,6 @@ export type WeightVector = {
 	w4: number
 	w3: number
 	w2: number
-}
-
-/**
- * Report describing whether a rule set covers every canonical situation.
- */
-export interface ExhaustivenessReport {
-	exhaustive: boolean
-	missing: Graph[]
-	missingCount: number
-	coveredCount: number
-	totalSituations: number
 }
 
 /**
@@ -424,30 +413,4 @@ export function analyzeRule(rule: BranchingRule): BranchingRuleWithAnalysis {
  */
 export function analyzeRules(rulesToAnalyze: BranchingRule[]): BranchingRuleWithAnalysis[] {
 	return rulesToAnalyze.map(rule => analyzeRule(rule))
-}
-
-/**
- * Checks whether the provided rule set covers every canonical local situation.
- *
- * @param rulesToCheck - Rules evaluated for signature coverage.
- * @returns Exhaustiveness report summarizing coverage counts and missing signatures.
- */
-export function testBranchingRuleExhaustiveness(
-	rulesToCheck: BranchingRule[]
-): ExhaustivenessReport {
-	const coverage = new Set<string>()
-	for (const rule of rulesToCheck) {
-		const canon = rule.before.canon()
-		coverage.add(canon.signature)
-	}
-	const missing = ALL_LOCAL_SITUATIONS.filter(situation => !coverage.has(situation.signature)).map(
-		x => x.canon
-	)
-	return {
-		exhaustive: missing.length === 0,
-		missing,
-		missingCount: missing.length,
-		coveredCount: coverage.size,
-		totalSituations: ALL_LOCAL_SITUATIONS.length
-	}
 }

@@ -14,6 +14,10 @@ export type GridWorkerInput = {
 	axisCount?: number
 	step?: number
 }
+// | {
+// 		type: "compute-local-situations"
+// 		numColors: 4
+//   }
 
 export type GridWorkerCellMessage = {
 	type: "cell"

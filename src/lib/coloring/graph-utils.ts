@@ -1,9 +1,8 @@
 /**
  * Canonical color identifiers used throughout the coloring visualizations.
  */
-export type Color = 1 | 2 | 3 | 4
+export type Color = number
 export type NodeId = string
-export const COLOR_DOMAIN = [1, 2, 3, 4] as const
 
 /**
  * Minimal node representation used by both the rule engine and graph utilities.
@@ -15,6 +14,16 @@ export interface GraphNode {
 	removedColors?: readonly Color[]
 	role?: "root" | "separator"
 	halfedges?: number
+}
+
+/**
+ * Assigns a stable priority to node roles for canonical sorting (root < undefined < separator).
+ */
+const roleRank = (role: GraphNode["role"]) => {
+	if (role === "root") return 0
+	if (role === undefined) return 1
+	if (role === "separator") return 2
+	return 3
 }
 
 /**
@@ -36,7 +45,11 @@ export class Graph {
 
 	constructor(nodes: readonly GraphNode[], edges: readonly GraphEdge[]) {
 		this._nodes = nodes.map(n => ({ ...n }))
-		this._nodes.sort((a, b) => a.id.localeCompare(b.id))
+		this._nodes.sort((a, b) => {
+			const rankDiff = roleRank(a.role) - roleRank(b.role)
+			if (rankDiff !== 0) return rankDiff
+			return a.id.localeCompare(b.id)
+		})
 		this._edges = edges.map(e => {
 			if (e.from <= e.to) return { from: e.from, to: e.to }
 			else return { from: e.to, to: e.from }
@@ -130,11 +143,14 @@ export class Graph {
 		const innersPermutations = generatePermutationMap(inners.map(n => n.id))
 		const separatorsPermutations = generatePermutationMap(separators.map(n => n.id))
 
+		const occuringColor = this._nodes.map(n => new Set(n.colors)).reduce((C, D) => C.union(D))
+		const colorDomain = Array.from(occuringColor).toSorted()
+
 		for (const p1 of rootsPermutations)
 			for (const p2 of innersPermutations)
 				for (const p3 of separatorsPermutations) {
 					const f: Partial<Record<NodeId, NodeId>> = { ...p1, ...p2, ...p3 }
-					for (const c of generatePermutationMap(COLOR_DOMAIN)) {
+					for (const c of generateBijections(colorDomain)) {
 						if (this.hasAutomorphism(f)) yield { nodeMap: f, colorMap: c }
 					}
 				}
@@ -171,7 +187,7 @@ export class Graph {
 	}
 
 	signature(): string {
-		const nodeRoles = this._nodes.map(n => n.role ?? "none").join(".")
+		const nodeRoles = this._nodes.map(n => roleRank(n.role))
 		const nodeColors = this._nodes.map(n => n.colors.toSorted().join(",")).join("|")
 		let adjacencyPart = ""
 		for (const u of this._nodes) {
@@ -192,18 +208,35 @@ export class Graph {
 export function* generatePermutationMap<T extends string | number>(
 	items: readonly T[]
 ): Generator<Record<T, T>> {
+	for (const bijection of generateBijections(items)) {
+		const permutation: Partial<Record<T, T>> = {}
+		for (const item of items) {
+			const targetIndex = bijection[item] - 1
+			permutation[item] = items[targetIndex]
+		}
+		yield permutation as Record<T, T>
+	}
+}
+
+/**
+ * Generates every bijection from the provided items onto the set {1, ..., items.length}.
+ */
+export function* generateBijections<T extends string | number>(
+	items: readonly T[]
+): Generator<Record<T, number>> {
 	if (items.length === 0) {
-		yield {} as Record<T, T>
+		yield {} as Record<T, number>
 		return
 	}
-	const picks = Array<number>(items.length).fill(-1)
+	const targets = Array.from({ length: items.length }, (_, i) => i + 1)
+	const picks = Array<number>(items.length).fill(-1) // indices into targets
 	const used = Array<boolean>(items.length).fill(false)
 	let depth = 0
 	while (depth >= 0) {
 		if (picks[depth] !== -1) used[picks[depth]] = false
 		let nextIndex = picks[depth] + 1
-		while (nextIndex < items.length && used[nextIndex]) nextIndex++
-		if (nextIndex >= items.length) {
+		while (nextIndex < targets.length && used[nextIndex]) nextIndex++
+		if (nextIndex >= targets.length) {
 			picks[depth] = -1
 			depth--
 			continue
@@ -211,9 +244,9 @@ export function* generatePermutationMap<T extends string | number>(
 		picks[depth] = nextIndex
 		used[nextIndex] = true
 		if (depth === items.length - 1) {
-			const permutation: Partial<Record<T, T>> = {}
-			for (let i = 0; i < items.length; i++) permutation[items[i]] = items[picks[i]]
-			yield permutation as Record<T, T>
+			const mapping: Partial<Record<T, number>> = {}
+			for (let i = 0; i < items.length; i++) mapping[items[i]] = targets[picks[i]]
+			yield mapping as Record<T, number>
 			continue
 		}
 		depth++
