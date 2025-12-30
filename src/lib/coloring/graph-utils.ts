@@ -3,6 +3,7 @@
  */
 export type Color = number
 export type NodeId = string
+export type GraphJSON = { nodes: GraphNode[]; edges: GraphEdge[] }
 
 /**
  * Minimal node representation used by both the rule engine and graph utilities.
@@ -135,25 +136,37 @@ export class Graph {
 	}
 
 	*generateAutomorphisms() {
-		const roots = this._nodes.filter(n => n.role === "root")
-		const inners = this._nodes.filter(n => n.role === undefined)
+		const roots = this._nodes.filter(n => n.role === "root").map(n => n.id)
+		const inners = this._nodes.filter(n => n.role === undefined).map(n => n.id)
 		const separators = this._nodes.filter(n => n.role === "separator")
+		const separatorsByHalfedges = new Map<number | undefined, NodeId[]>()
+		for (const n of separators) {
+			const bucket = separatorsByHalfedges.get(n.halfedges) ?? []
+			bucket.push(n.id)
+			separatorsByHalfedges.set(n.halfedges, bucket)
+		}
+		const separatorClasses = Array.from(separatorsByHalfedges.entries()).map(([, ids]) => ids)
 
-		const rootsPermutations = generatePermutationMap(roots.map(n => n.id))
-		const innersPermutations = generatePermutationMap(inners.map(n => n.id))
-		const separatorsPermutations = generatePermutationMap(separators.map(n => n.id))
+		const colorClasses = [
+			...(roots.length ? [roots] : []),
+			...separatorClasses,
+			...(inners.length ? [inners] : [])
+		]
+
+		const permutations = generatePermutationMap(
+			this._nodes.map(n => n.id),
+			colorClasses
+		)
 
 		const occuringColor = this._nodes.map(n => new Set(n.colors)).reduce((C, D) => C.union(D))
 		const colorDomain = Array.from(occuringColor).toSorted()
 
-		for (const p1 of rootsPermutations)
-			for (const p2 of innersPermutations)
-				for (const p3 of separatorsPermutations) {
-					const f: Partial<Record<NodeId, NodeId>> = { ...p1, ...p2, ...p3 }
-					for (const c of generateBijections(colorDomain)) {
-						if (this.hasAutomorphism(f)) yield { nodeMap: f, colorMap: c }
-					}
-				}
+		for (const p of permutations) {
+			const f: Partial<Record<NodeId, NodeId>> = { ...p }
+			for (const c of generateBijections(colorDomain)) {
+				if (this.hasAutomorphism(f)) yield { nodeMap: f, colorMap: c }
+			}
+		}
 	}
 
 	canon(): { canon: Graph; signature: string } {
@@ -186,6 +199,17 @@ export class Graph {
 		return new Graph(newNodes, newEdges)
 	}
 
+	toJSON(): GraphJSON {
+		return {
+			nodes: this._nodes.map(n => ({ ...n, colors: [...n.colors] })),
+			edges: this._edges.map(e => ({ ...e }))
+		}
+	}
+
+	static fromJSON(data: GraphJSON): Graph {
+		return new Graph(data.nodes, data.edges)
+	}
+
 	signature(): string {
 		const nodeRoles = this._nodes.map(n => roleRank(n.role))
 		const nodeColors = this._nodes.map(n => n.colors.toSorted().join(",")).join("|")
@@ -206,16 +230,48 @@ export class Graph {
  * @returns Generator emitting one map per permutation.
  */
 export function* generatePermutationMap<T extends string | number>(
-	items: readonly T[]
+	items: readonly T[],
+	colorClasses: readonly (readonly T[])[] = []
 ): Generator<Record<T, T>> {
-	for (const bijection of generateBijections(items)) {
-		const permutation: Partial<Record<T, T>> = {}
-		for (const item of items) {
-			const targetIndex = bijection[item] - 1
-			permutation[item] = items[targetIndex]
+	const itemSet = new Set(items)
+	const seen = new Set<T>()
+	const buckets: T[][] = []
+	const groups = colorClasses.length === 0 ? [items] : colorClasses
+
+	for (const group of groups) {
+		const bucket: T[] = []
+		for (const item of group) {
+			if (!itemSet.has(item)) continue
+			if (seen.has(item)) throw new Error(`Duplicate item in colorClasses: ${String(item)}`)
+			seen.add(item)
+			bucket.push(item)
 		}
-		yield permutation as Record<T, T>
+		if (bucket.length) buckets.push(bucket)
 	}
+
+	for (const item of items) {
+		if (!seen.has(item)) buckets.push([item])
+	}
+
+	function* backtrack(index: number, acc: Record<T, T>): Generator<Record<T, T>> {
+		if (index === buckets.length) {
+			yield acc
+			return
+		}
+		const bucket = buckets[index]
+		for (const bijection of generateBijections(bucket)) {
+			const assigned: T[] = []
+			for (const item of bucket) {
+				const targetIndex = bijection[item] - 1
+				acc[item] = bucket[targetIndex]
+				assigned.push(item)
+			}
+			yield* backtrack(index + 1, acc)
+			for (const item of assigned) delete acc[item]
+		}
+	}
+
+	yield* backtrack(0, {} as Record<T, T>)
 }
 
 /**

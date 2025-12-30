@@ -1,4 +1,5 @@
 import { Graph, type Color, type GraphEdge, type GraphNode, type NodeId } from "./graph-utils"
+import { degreeFeatureProvider, Measure, type Feature, type FeatureVector } from "./measure"
 import { hasProperColoring } from "./proper-coloring"
 
 /**
@@ -26,8 +27,8 @@ export interface BranchingRule {
  */
 export interface BranchAnalysis {
 	after: Graph
-	measureAfter: Measure
-	delta: Measure
+	featuresAfter: FeatureVector
+	featuresDelta: FeatureVector
 	hasColoring: boolean
 }
 
@@ -35,29 +36,10 @@ export interface BranchAnalysis {
  * Summarizes analyzer output for an entire rule and its recurrence impact.
  */
 export interface BranchingRuleWithAnalysis extends BranchingRule {
-	measureBefore: Measure
+	featuresBefore: FeatureVector
 	beforeHasColoring: boolean
 	branchDetails: BranchAnalysis[]
-	recurrenceDisplay: string
 	recurrenceEquation: string
-}
-
-/**
- * Two-component measure tracking how many degree-qualified vertices have 3 or 2 colors.
- */
-export type Measure = {
-	n4: number
-	n3: number
-	n2: number
-}
-
-/**
- * Weight assignment used to project two-dimensional measures into a scalar recurrence.
- */
-export type WeightVector = {
-	w4: number
-	w3: number
-	w2: number
 }
 
 /**
@@ -276,63 +258,33 @@ function applyBranchWithDiff(rule: BranchingRule, branch: Branch): Graph {
 }
 
 /**
- * Computes the (n₃, n₂) measure for vertices with degree ≥ 3 or adjacent to the roots.
- *
- * @param G - A graph
- * @returns Measure counting qualifying 3-color and 2-color vertices.
- */
-function computeMeasure(G: Graph): Measure {
-	let n4 = 0
-	let n3 = 0
-	let n2 = 0
-	for (const node of G.nodes) {
-		const qualifies = G.degree(node.id) >= 3
-		if (!qualifies) continue
-		if (node.colors.length === 4) n4 += 1
-		else if (node.colors.length === 3) n3 += 1
-		else if (node.colors.length === 2) n2 += 1
-	}
-	return { n4, n3, n2 }
-}
-
-/**
  * Builds TeX-like and plain recurrence strings summarizing the branch measure drops.
  *
- * @param deltas - Measure deltas for each branch.
+ * @param deltas - Difference of feature vectors, showing how each feature drops in a branch.
  * @returns Display string and compact equation form.
  */
-function buildRecurrenceStrings(deltas: Measure[]) {
-	interface CountedDelta {
-		key: string
-		delta: Measure
-		count: number
-	}
-
-	const map = new Map<string, CountedDelta>()
+export function buildRecurrenceStrings(deltas: FeatureVector[], onlyRHS = false) {
+	const features = degreeFeatureProvider.features
+	const nonZero = new Set<Feature>()
 	for (const delta of deltas) {
-		const key = `${delta.n3}|${delta.n2}`
-		const existing = map.get(key)
-		if (existing) existing.count += 1
-		else map.set(key, { key, delta, count: 1 })
+		for (const f of features) {
+			if (delta[f] !== 0) nonZero.add(f)
+		}
 	}
-
-	const makeArg = (label: "n4" | "n3" | "n2", drop: number) => {
-		const displayLabel = label === "n4" ? "n₄" : label === "n3" ? "n₃" : "n₂"
-		if (drop === 0) return displayLabel
-		return drop < 0 ? `${displayLabel}+${-drop}` : `${displayLabel}-${drop}`
+	function makeFunction(delta: FeatureVector) {
+		return (
+			"T(" +
+			features
+				.filter(f => nonZero.has(f))
+				.map(f => (!delta[f] ? f : delta[f] > 0 ? `${f}−${delta[f]}` : `${f}+${-delta[f]}`))
+				.join(",") +
+			")"
+		)
 	}
-
-	const terms = Array.from(map.values())
-		// .sort((a, b) => a.delta.n3 - b.delta.n3 || a.delta.n2 - b.delta.n2)
-		.map(({ delta, count }) => {
-			const base = `T(${makeArg("n4", delta.n4)},${makeArg("n3", delta.n3)},${makeArg("n2", delta.n2)})`
-			return count > 1 ? `${count}*${base}` : base
-		})
-
-	const lhs = "T(n₄,n₃,n₂)"
-	const display = `${lhs} = ${terms.join(" + ")}`
-	const equation = `${lhs}=${terms.join("+")}`
-	return { display, equation }
+	const RHS = deltas.map(makeFunction).join("+")
+	if (onlyRHS) return RHS
+	const LHS = makeFunction({} as FeatureVector)
+	return `${LHS}=${RHS}`
 }
 
 /**
@@ -343,12 +295,10 @@ function buildRecurrenceStrings(deltas: Measure[]) {
  * @returns Display/equation strings plus the list of drops.
  */
 export function buildScalarRecurrence(
-	deltas: Measure[],
-	weights: WeightVector
+	deltas: FeatureVector[],
+	weights: Measure
 ): { equation: string; drops: number[]; decreasing: boolean } {
-	const drops = deltas.map(
-		delta => weights.w4 * delta.n4 + weights.w3 * delta.n3 + weights.w2 * delta.n2
-	)
+	const drops = deltas.map(delta => weights.computeMeasure(delta))
 	const counts = new Map<number, number>()
 	for (const drop of drops) {
 		counts.set(drop, (counts.get(drop) ?? 0) + 1)
@@ -356,7 +306,7 @@ export function buildScalarRecurrence(
 	const termEntries = Array.from(counts.entries())
 	if (termEntries.length === 0) {
 		return {
-			equation: "T(n)=T(n)",
+			equation: "T(μ)=T(μ)",
 			drops: [],
 			decreasing: false
 		}
@@ -365,11 +315,11 @@ export function buildScalarRecurrence(
 		.sort((a, b) => a[0] - b[0])
 		.filter(([, count]) => count !== 0)
 		.map(([drop, count]) => {
-			const base = `T(n-${drop})`
+			const base = drop < 0 ? `T(μ+${-drop})` : `T(μ-${drop})`
 			return count !== 1 ? `${count}*${base}` : base
 		})
 	const decreasing = termEntries.every(([drop]) => drop > 0)
-	const equation = `T(n)=${terms.join("+")}`
+	const equation = `T(μ)=${terms.join("+")}`
 	return { equation, drops, decreasing }
 }
 
@@ -379,29 +329,28 @@ export function buildScalarRecurrence(
  * @param rule - Branching rule to analyze.
  * @returns Detailed analysis including measure drops, solver text, and invariants.
  */
-export function analyzeRule(rule: BranchingRule): BranchingRuleWithAnalysis {
-	const measureBefore = computeMeasure(rule.before)
+export function analyzeRule(
+	rule: BranchingRule,
+	computeFeatureVector: (G: Graph) => FeatureVector,
+	subtractFeatureVectors: (a: FeatureVector, b: FeatureVector) => FeatureVector
+): BranchingRuleWithAnalysis {
+	const featuresBefore = computeFeatureVector(rule.before)
 	const beforeHasColoring = hasProperColoring(rule.before)
 	const branchDetails = rule.branches.map(branch => {
 		const after = applyBranchWithDiff(rule, branch)
-		const measureAfter = computeMeasure(after)
+		const featuresAfter = computeFeatureVector(after)
 		const hasColoring = hasProperColoring(after)
-		const delta: Measure = {
-			n4: measureBefore.n4 - measureAfter.n4,
-			n3: measureBefore.n3 - measureAfter.n3,
-			n2: measureBefore.n2 - measureAfter.n2
-		}
-		return { after, measureAfter, delta, hasColoring }
+		const featuresDelta = subtractFeatureVectors(featuresBefore, featuresAfter)
+		return { after, featuresAfter, featuresDelta, hasColoring }
 	})
-	const deltas = branchDetails.map(b => b.delta)
-	const { display, equation } = buildRecurrenceStrings(deltas)
+	const deltas = branchDetails.map(b => b.featuresDelta)
+	const recurrenceEquation = buildRecurrenceStrings(deltas)
 	return {
 		...rule,
-		measureBefore,
+		featuresBefore,
 		beforeHasColoring,
 		branchDetails,
-		recurrenceDisplay: display,
-		recurrenceEquation: equation
+		recurrenceEquation
 	}
 }
 
@@ -412,5 +361,11 @@ export function analyzeRule(rule: BranchingRule): BranchingRuleWithAnalysis {
  * @returns Array of rule analysis results in the same order as input.
  */
 export function analyzeRules(rulesToAnalyze: BranchingRule[]): BranchingRuleWithAnalysis[] {
-	return rulesToAnalyze.map(rule => analyzeRule(rule))
+	return rulesToAnalyze.map(rule =>
+		analyzeRule(
+			rule,
+			degreeFeatureProvider.computeFeatureVector,
+			degreeFeatureProvider.subtractFeatureVectors
+		)
+	)
 }

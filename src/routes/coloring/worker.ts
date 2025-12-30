@@ -1,33 +1,33 @@
-import type { BranchingRuleWithAnalysis, WeightVector } from "$lib/coloring/rule-engine"
 import {
-	axisValue,
-	buildCell,
-	GRID_AXIS_COUNT,
-	GRID_SEARCH_STEP,
-	type WeightGridCell
-} from "./weight-grid-shared"
+	iterateMeasureGrid,
+	numberOfGridPoints,
+	type Feature,
+	type Measure
+} from "$lib/coloring/measure"
+import type { BranchingRuleWithAnalysis } from "$lib/coloring/rule-engine"
+import { buildCell, GRID_AXIS_COUNT, type WeightGridCell } from "./weight-grid-shared"
 
 export type GridWorkerInput = {
 	type: "start"
 	ruleGroups: BranchingRuleWithAnalysis[][]
-	w?: Partial<WeightVector>
+	minPartialMeasure?: Partial<Record<Feature, number>>
+	maxPartialMeasure?: Partial<Record<Feature, number>>
 	axisCount?: number
 	step?: number
 }
-// | {
-// 		type: "compute-local-situations"
-// 		numColors: 4
-//   }
+
+export type GridWorkerProgressMessage = {
+	type: "progress"
+	percent: number
+}
 
 export type GridWorkerCellMessage = {
-	type: "cell"
+	type: "currentBest"
 	cell: WeightGridCell
 }
 
 export type GridWorkerDoneMessage = {
 	type: "done"
-	bestWeights: WeightVector | null
-	bestBase: number | null
 }
 
 export type GridWorkerErrorMessage = {
@@ -36,6 +36,7 @@ export type GridWorkerErrorMessage = {
 }
 
 export type GridWorkerMessage =
+	| GridWorkerProgressMessage
 	| GridWorkerCellMessage
 	| GridWorkerDoneMessage
 	| GridWorkerErrorMessage
@@ -45,44 +46,37 @@ self.onmessage = async (event: MessageEvent<GridWorkerInput>) => {
 	const {
 		ruleGroups,
 		axisCount = GRID_AXIS_COUNT,
-		step = GRID_SEARCH_STEP,
-		w: fixedW = {}
+		minPartialMeasure,
+		maxPartialMeasure
 	} = event.data
 
 	try {
-		let best: { weights?: WeightVector; base: number } = { base: Infinity }
+		let best: { weights?: Measure; base: number } = { base: Infinity }
 
-		const w4Values = (() => {
-			if (fixedW.w4 !== undefined) return [fixedW.w4]
-			return Array.from({ length: axisCount }, (_, i) => axisValue(i, axisCount, step))
-		})()
-
-		const w3Values = (() => {
-			if (fixedW.w3 !== undefined) return [fixedW.w3]
-			return Array.from({ length: axisCount }, (_, i) => axisValue(i, axisCount, step))
-		})()
-
-		const w2Values = (() => {
-			if (fixedW.w2 !== undefined) return [fixedW.w2]
-			return Array.from({ length: axisCount }, (_, j) => axisValue(j, axisCount, step))
-		})()
-
-		for (const w4 of w4Values) {
-			for (const w3 of w3Values) {
-				for (const w2 of w2Values) {
-					const cell = await buildCell({ w: { w4, w3, w2 }, ruleGroups })
-					self.postMessage({ type: "cell", cell })
-					const base = cell.maxBase
-					if (base !== null && base < best.base) {
-						best = { weights: cell.w, base }
-					}
-				}
+		const totalNumberOfGridPoints = numberOfGridPoints(
+			axisCount,
+			minPartialMeasure,
+			maxPartialMeasure
+		)
+		let seenGridPoints = 0
+		let percent = 0
+		self.postMessage({ type: "progress", percent })
+		for (const w of iterateMeasureGrid(axisCount, minPartialMeasure, maxPartialMeasure)) {
+			const cell = await buildCell({ w, ruleGroups })
+			const base = cell.maxBase
+			if (base !== null && base < best.base) {
+				self.postMessage({ type: "currentBest", cell })
+				best = { weights: cell.w, base }
+			}
+			seenGridPoints += 1
+			const progressCandidate = seenGridPoints / totalNumberOfGridPoints
+			if (progressCandidate - percent > 0.001) {
+				percent = progressCandidate
+				self.postMessage({ type: "progress", percent })
 			}
 		}
 		const done: GridWorkerDoneMessage = {
-			type: "done",
-			bestWeights: best?.weights ?? null,
-			bestBase: best?.base ?? null
+			type: "done"
 		}
 		self.postMessage(done)
 	} catch (error) {

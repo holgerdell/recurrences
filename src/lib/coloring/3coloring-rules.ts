@@ -8,6 +8,18 @@ function character(i: number) {
 }
 
 /**
+ * Require that the color list of the root vertex is less than or equal in size to the sizes of the
+ * neighbors. (That is, we prioritize branching on list-size 2 vertices)
+ */
+const REQUIRE_ROOT_LIST_LEQ_NEIGHBOR_LIST = true
+
+/**
+ * Require that, if the root has a list of size two, then there is at most one neighbor with the
+ * identical list (otherwise the two duplicates could be identified for free).
+ */
+const REQUIRE_NO_TWO_SAME_AS_ROOT_LIST = true
+
+/**
  * Enumerates every color list considered when generating canonical neighborhoods.
  */
 const ROOT_COLOR_LIST_OPTIONS = [
@@ -36,7 +48,7 @@ const COMPATIBLE_COLOR_LISTS: ReadonlyArray<ReadonlyArray<number>> = (() => {
 		for (let d = 0; d < COLOR_LIST_OPTIONS.length; d++) {
 			const D = COLOR_LIST_OPTIONS[d]
 			if (new Set(rootColors).isDisjointFrom(new Set(D))) continue
-			if (rootColors.length > D.length) continue
+			if (REQUIRE_ROOT_LIST_LEQ_NEIGHBOR_LIST && rootColors.length > D.length) continue
 			compatibleWithRoot.push(d)
 		}
 		table.push(compatibleWithRoot)
@@ -51,40 +63,78 @@ const COMPATIBLE_COLOR_LISTS: ReadonlyArray<ReadonlyArray<number>> = (() => {
  */
 export function* generateAllLocalSituations(minDegree = 3, maxDegree = 4) {
 	const edges: GraphEdge[] = []
-	const separators: GraphNode[] = []
 	for (let i = 1; i <= maxDegree; i++) {
 		const c = character(i)
 		edges.push({ from: "v", to: c })
-		separators.push({ id: c, role: "separator", colors: [] })
 	}
-	const seen = new Set<string>()
+	// const seen = new Set<string>()
+	let situationId = 0
 	for (let rootColors = 0; rootColors < ROOT_COLOR_LIST_OPTIONS.length; rootColors++) {
 		const C = ROOT_COLOR_LIST_OPTIONS[rootColors]
 		const nodes: GraphNode[] = [{ id: "v", colors: C, role: "root" }]
-		function* backtrack(i = 1, minJ = 0): Generator<GraphNode[]> {
-			if (i > minDegree) yield nodes
-			if (i > maxDegree) return
+
+		/**
+		 * This function generates all stars with center vertex v and targetDegree leaves, assigning all
+		 * possible non-isomorphic color list and half-edges to the leaves.
+		 */
+		function* backtrack(
+			targetDegree: number,
+			alreadyGenerated = 0,
+			minJ = 0
+		): Generator<GraphNode[]> {
+			if (alreadyGenerated === targetDegree) {
+				yield nodes
+				return
+			}
 			for (const j of COMPATIBLE_COLOR_LISTS[rootColors]) {
 				if (j < minJ) continue
 				const D = COLOR_LIST_OPTIONS[j]
 				const noDuplicates =
-					C.length === 2 && D.length === 2 && C[0] === D[0] && C[1] === D[1] ? 1 : 0
-				nodes.push({ id: character(i), colors: D, role: "separator" })
-				yield* backtrack(i + 1, Math.max(j + noDuplicates, minJ))
-				nodes.pop()
+					REQUIRE_NO_TWO_SAME_AS_ROOT_LIST &&
+					C.length === 2 &&
+					D.length === 2 &&
+					C[0] === D[0] &&
+					C[1] === D[1]
+						? 1
+						: 0
+				const minHalfedges = targetDegree === maxDegree ? targetDegree : 2
+				const maxHalfedges = targetDegree === maxDegree ? targetDegree : targetDegree - 1
+				for (let halfedges = minHalfedges; halfedges <= maxHalfedges; halfedges++) {
+					nodes.push({
+						id: character(alreadyGenerated + 1),
+						colors: D,
+						role: "separator",
+						halfedges
+					})
+					const newMinJ = Math.max(j + noDuplicates, minJ)
+					yield* backtrack(targetDegree, alreadyGenerated + 1, newMinJ)
+					nodes.pop()
+				}
 			}
 		}
-		for (const V of backtrack()) {
-			const degree = V.length - 1
-			for (const v of V) {
-				if (v.role !== "separator") continue
-				v.halfedges = degree - 1
-			}
-			const E = edges.slice(0, degree)
-			const canon = new Graph(V, E).canon()
-			if (!seen.has(canon.signature)) {
-				yield { ...canon, situationId: seen.size }
-				seen.add(canon.signature)
+		for (let targetDegree = minDegree; targetDegree <= maxDegree; targetDegree++) {
+			for (const V of backtrack(targetDegree)) {
+				const E = edges.slice(0, V.length - 1)
+				const G = new Graph(V, E)
+
+				// this HACK removes graphs that use colors 1,2,4, but not 3.
+				const colorSet = new Set<number>()
+				for (const n of G.nodes) for (const c of n.colors) colorSet.add(c)
+				if (colorSet.size === 3) {
+					const colors = Array.from(colorSet).sort()
+					if (colors.join(",") !== "1,2,3") continue
+				} else if (colorSet.size === 2) {
+					const colors = Array.from(colorSet).sort()
+					if (colors.join(",") !== "1,2") continue
+				}
+
+				yield { canon: G, situationId }
+				situationId++
+				// const canon = new Graph(V, E).canon()
+				// if (!seen.has(canon.signature)) {
+				// 	yield { ...canon, situationId: seen.size }
+				// 	seen.add(canon.signature)
+				// }
 			}
 		}
 	}

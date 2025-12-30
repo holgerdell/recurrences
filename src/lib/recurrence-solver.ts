@@ -50,10 +50,16 @@ export type Recurrence = TermBasedRecurrence[]
 export type ParseResult = { ok: true; recurrences: Recurrence } | { ok: false; error: string }
 
 /**
- * Regex restricting function and variable identifiers to alphanumerics plus underscores.
+ * Regex restricting function and variable identifiers to Unicode letters plus digits, underscores,
+ * and curly braces (for names like mu, α, or n_{1}). Leading character must be a letter.
  */
-export const IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
+export const IDENTIFIER_PATTERN = /^[\p{L}][\p{L}\p{N}_{}]*$/u
 const NUMBER_PATTERN = /^-?\d+(?:\.\d+)?$/
+
+// Strip anchors for reuse inside larger expressions (e.g., term regexes).
+const IDENTIFIER_BODY = IDENTIFIER_PATTERN.source.replace(/^\^|\$$/g, "")
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 // ======================================================
 //   Utility functions (from previous version)
@@ -180,7 +186,8 @@ export function parseRecurrences(lines: string | string[]): ParseResult {
 		} else {
 			for (const summand of summands) {
 				const termRegex = new RegExp(
-					`^(?:(-?\\d+(?:\\.\\d+)?)\\*?)?([A-Za-z][A-Za-z0-9_]*)\\(([^)]*)\\)$`
+					`^(?:(-?\\d+(?:\\.\\d+)?)\\*?)?(${IDENTIFIER_BODY})\\(([^)]*)\\)$`,
+					"u"
 				)
 				const m = termRegex.exec(summand)
 				if (!m) return { ok: false, error: `Invalid term: ${summand}` }
@@ -209,7 +216,7 @@ export function parseRecurrences(lines: string | string[]): ParseResult {
 					if (NUMBER_PATTERN.test(arg)) continue
 					const v = vars[varIndex]
 					if (!v) return { ok: false, error: `Unexpected arg '${arg}'` }
-					const matchArg = new RegExp(`^${v}([+-]\\d+(?:\\.\\d+)?)?$`).exec(arg)
+					const matchArg = new RegExp(`^${escapeRegex(v)}([+-]\\d+(?:\\.\\d+)?)?$`, "u").exec(arg)
 					if (!matchArg) return { ok: false, error: `Invalid arg '${arg}'` }
 					const shift = matchArg[1] ? parseFloat(matchArg[1]) : 0
 					shifts[v] = shift
