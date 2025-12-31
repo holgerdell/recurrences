@@ -5,15 +5,14 @@ import {
 	type Measure
 } from "$lib/coloring/measure"
 import type { BranchingRuleWithAnalysis } from "$lib/coloring/rule-engine"
-import { buildCell, GRID_AXIS_COUNT, type WeightGridCell } from "./weight-grid-shared"
+import { buildCell, type WeightGridCell } from "./weight-grid-shared"
 
 export type GridWorkerInput = {
 	type: "start"
 	ruleGroups: BranchingRuleWithAnalysis[][]
 	minPartialMeasure?: Partial<Record<Feature, number>>
 	maxPartialMeasure?: Partial<Record<Feature, number>>
-	axisCount?: number
-	step?: number
+	samplesPerAxis: number
 }
 
 export type GridWorkerProgressMessage = {
@@ -43,25 +42,20 @@ export type GridWorkerMessage =
 
 self.onmessage = async (event: MessageEvent<GridWorkerInput>) => {
 	if (event.data?.type !== "start") return
-	const {
-		ruleGroups,
-		axisCount = GRID_AXIS_COUNT,
-		minPartialMeasure,
-		maxPartialMeasure
-	} = event.data
+	const { ruleGroups, samplesPerAxis, minPartialMeasure, maxPartialMeasure } = event.data
 
 	try {
 		let best: { weights?: Measure; base: number } = { base: Infinity }
 
 		const totalNumberOfGridPoints = numberOfGridPoints(
-			axisCount,
+			samplesPerAxis,
 			minPartialMeasure,
 			maxPartialMeasure
 		)
 		let seenGridPoints = 0
 		let percent = 0
 		self.postMessage({ type: "progress", percent })
-		for (const w of iterateMeasureGrid(axisCount, minPartialMeasure, maxPartialMeasure)) {
+		for (const w of iterateMeasureGrid(samplesPerAxis, minPartialMeasure, maxPartialMeasure)) {
 			const cell = await buildCell({ w, ruleGroups })
 			const base = cell.maxBase
 			if (base !== null && base < best.base) {

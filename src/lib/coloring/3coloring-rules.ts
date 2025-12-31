@@ -1,7 +1,7 @@
 import { Graph, type Color, type GraphEdge, type GraphNode } from "./graph-utils"
 import type { BranchingRule } from "./rule-engine"
 
-function character(i: number) {
+export function character(i: number) {
 	if (!Number.isInteger(i) || i < 1) throw new Error("index must be a positive integer")
 	if (i > 26) throw new Error("index out of range (max 26)")
 	return String.fromCharCode("a".charCodeAt(0) + (i - 1))

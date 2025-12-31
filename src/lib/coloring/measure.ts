@@ -151,8 +151,7 @@ export function* iterateMeasureGrid(
 
 	function* helper(index: number): IterableIterator<Measure> {
 		if (index === features.length) {
-			const m = new Measure()
-			m.coefficients = { ...coeffs }
+			const m = new Measure(coeffs)
 			yield m
 			return
 		}
