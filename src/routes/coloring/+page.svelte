@@ -3,7 +3,12 @@
 	import { browser } from "$app/environment"
 	import { autogenerateRules } from "$lib/coloring/3coloring-rules"
 	import type { Color, Graph } from "$lib/coloring/graph-utils"
-	import { degreeFeatureProvider, Measure, type Feature } from "$lib/coloring/measure"
+	import {
+		degreeFeatureProvider,
+		FeatureDefinition,
+		Measure,
+		type Feature
+	} from "$lib/coloring/measure"
 	import {
 		analyzeRule,
 		buildRecurrenceStrings,
@@ -13,7 +18,7 @@
 	import { enumerateStarSignatures, parseStarGraph } from "$lib/coloring/star-graph-canonization"
 	import BasicSubscripts from "$lib/components/BasicSubscripts.svelte"
 	import GraphView from "$lib/components/GraphView.svelte"
-	import { formatAsymptotics } from "$lib/root-finding"
+	import { formatAsymptotics, formatNumber } from "$lib/root-finding"
 	import {
 		buildRecurrenceSolutionsForWeights,
 		buildWeightedRecurrencesForWeights
@@ -104,8 +109,8 @@
 		function* generator() {
 			for (let centerListSize = 2; centerListSize <= 4; centerListSize++) {
 				for (let leafListSize = centerListSize; leafListSize <= 4; leafListSize++) {
-					for (let degree = 3; degree <= 6; degree++) {
-						for (let halfedges = 2; halfedges <= 5; halfedges++) {
+					for (let degree = 3; degree <= 7; degree++) {
+						for (let halfedges = 2; halfedges <= 7; halfedges++) {
 							if (centerListSize === leafListSize && degree < halfedges + 1) continue
 							yield* enumerateStarSignatures(degree, halfedges, centerListSize, leafListSize)
 						}
@@ -141,27 +146,21 @@
 
 	const fixedPartialMeasure = $derived.by(() => {
 		const result: Partial<Record<Feature, number>> = {}
+		let listSizeUpTo = 4
 		if (selectedPalette === "1234") {
-			result["n_{4,≥5}"] = 1 // normalization
+			listSizeUpTo = 4
 		} else if (selectedPalette === "123") {
-			result["n_{4,≥5}"] = 0 // doesn't occur
-			result["n_{4,4}"] = 0 // doesn't occur
-			result["n_{4,3}"] = 0 // doesn't occur
-			result["n_{3,≥5}"] = 1 // normalization
+			listSizeUpTo = 3
 		}
 		if (selectedColorListSize === "size23") {
-			result["n_{4,≥5}"] = 0 // doesn't occur
-			result["n_{4,4}"] = 0 // doesn't occur
-			result["n_{4,3}"] = 0 // doesn't occur
-			result["n_{3,≥5}"] = 1 // normalization
+			listSizeUpTo = 3
 		} else if (selectedColorListSize === "size2") {
-			result["n_{4,≥5}"] = 0 // doesn't occur
-			result["n_{4,4}"] = 0 // doesn't occur
-			result["n_{4,3}"] = 0 // doesn't occur
-			result["n_{3,≥5}"] = 0 // doesn't occur
-			result["n_{3,4}"] = 0 // doesn't occur
-			result["n_{3,3}"] = 0 // doesn't occur
-			result["n_{2,≥5}"] = 1 // normalization
+			listSizeUpTo = 2
+		}
+		for (const f of degreeFeatureProvider.features) {
+			const def = FeatureDefinition[f]
+			if (def.requiresListSize > listSizeUpTo) result[f] = 0
+			if (def.requiresListSize === listSizeUpTo && def.normalizer) result[f] = 1
 		}
 		return result
 	})
@@ -215,12 +214,10 @@
 	let weightSearchProgress = $state({ mode: "", percent: 0 })
 	let lastBestWeights = $state<Measure | null>(null)
 	let lastBestBase = $state<number | null>(null)
-	let lastBestSituationId = $state<number | null>(null)
 	let currentSearchBounds = $state<null | {
 		min: Partial<Record<Feature, number>>
 		max: Partial<Record<Feature, number>>
 	}>(null)
-	let samplesPerAxis = $state(10)
 
 	const generatedWeightedRecurrences = $derived.by(() =>
 		localSituationsStatus.loading
@@ -235,16 +232,17 @@
 		)
 	)
 
-	const sortedDisplaySituations = $derived.by(async () => {
-		const sol = (
-			await Promise.all(generatedRecurrenceSolutions.map(async x => await Promise.all(x)))
-		).map(y => y.map(x => (x?.ok ? (x.divergent ? Infinity : Object.values(x.root)[0]) : 0)))
-		return displaySituations.sort((a, b) => Math.min(...sol[b]) - Math.min(...sol[a]))
+	const sortedDisplaySituations = $derived.by(() => {
+		const sol = generatedRecurrenceSolutions.map(y =>
+			y.map(x => (x?.ok ? (x.divergent ? Infinity : Object.values(x.root)[0]) : 0))
+		)
+		return displaySituations.toSorted((a, b) => Math.min(...sol[b]) - Math.min(...sol[a]))
 	})
+
+	const limitingSituationId = $derived(sortedDisplaySituations[0])
 
 	let worker: Worker | null = null
 	let searchVersion = 0
-	const GRID_REFINEMENT_RADIUS = 0.1
 	const stopWorker = () => {
 		searchVersion += 1
 		worker?.terminate()
@@ -268,30 +266,10 @@
 		return { min, max }
 	}
 
-	const buildRefinedBounds = (best: Measure) => {
-		const min: Partial<Record<Feature, number>> = {}
-		const max: Partial<Record<Feature, number>> = {}
-		for (const f of degreeFeatureProvider.features) {
-			const fixed = fixedPartialMeasure[f]
-			if (fixed !== undefined) {
-				min[f] = fixed
-				max[f] = fixed
-				continue
-			}
-			const v = best.coefficients[f]
-			min[f] = Math.max(0, v - GRID_REFINEMENT_RADIUS)
-			max[f] = Math.min(1, v + GRID_REFINEMENT_RADIUS)
-		}
-		return { min, max }
-	}
-
-	const startGridSearch = (
-		mode: "coarse" | "refine",
-		bounds?: {
-			min: Partial<Record<Feature, number>>
-			max: Partial<Record<Feature, number>>
-		}
-	) => {
+	const startOptimization = (bounds?: {
+		min: Partial<Record<Feature, number>>
+		max: Partial<Record<Feature, number>>
+	}) => {
 		if (!browser) return
 		if (filteredRules.length === 0) return
 		stopWorker()
@@ -300,10 +278,9 @@
 		currentSearchBounds = bounds ?? buildDefaultBounds()
 		lastBestWeights = null
 		lastBestBase = null
-		lastBestSituationId = null
 		let best: { weights: Measure | null; base: number } = { weights: null, base: Infinity }
 		weightSearchProgress = {
-			mode: mode === "refine" ? "Refined search" : "Grid search",
+			mode: "Opimizing",
 			percent: 0
 		}
 		worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" })
@@ -313,14 +290,18 @@
 			if (message.type === "progress") {
 				weightSearchProgress.percent = message.percent
 			} else if (message.type === "currentBest") {
-				const { cell } = message
-				const base = cell.maxBase
-				if (base !== null && (best.weights === null || base < best.base)) {
-					best = { weights: cell.w, base }
-					userWeights = cell.w.coefficients
+				const { x, value } = message
+				const w = new Measure(
+					Object.fromEntries(degreeFeatureProvider.features.map((f, i) => [f, x[i]])) as Record<
+						Feature,
+						number
+					>
+				)
+				if (best.weights === null || value < best.base) {
+					best = { weights: w, base: value }
+					userWeights = w.coefficients
 					lastBestWeights = best.weights
 					lastBestBase = best.base
-					lastBestSituationId = cell.limitingSituationId ?? null
 				}
 			} else if (message.type === "done") {
 				if (best.weights) {
@@ -342,7 +323,6 @@
 			currentSearchBounds ?? buildDefaultBounds()
 		const payload: GridWorkerInput = {
 			type: "start",
-			samplesPerAxis: Math.max(2, Math.floor(samplesPerAxis ?? 0)),
 			ruleGroups: [...filteredRules],
 			minPartialMeasure: { ...minPartialMeasure },
 			maxPartialMeasure: { ...maxPartialMeasure }
@@ -350,20 +330,9 @@
 		worker.postMessage(payload)
 	}
 
-	const handleStartCoarseSearch = () => startGridSearch("coarse")
-
-	const handleStartRefinedSearch = () => {
-		if (!lastBestWeights) return
-		startGridSearch("refine", buildRefinedBounds(lastBestWeights))
-	}
-
 	const handleStartSearch = () => {
 		if (isWeightSearchRunning) return
-		if (lastBestWeights) {
-			handleStartRefinedSearch()
-			return
-		}
-		handleStartCoarseSearch()
+		startOptimization()
 	}
 
 	const generatedGetRuleSolution = (rule: BranchingRuleWithAnalysis) => {
@@ -404,7 +373,6 @@
 		stopWorker()
 		lastBestWeights = null
 		lastBestBase = null
-		lastBestSituationId = null
 		weightSearchProgress = { mode: "", percent: 0 }
 		currentSearchBounds = null
 	})
@@ -450,7 +418,7 @@
 					></span>
 				{/if}
 				<div class="space-y-0.5">
-					<div class="font-semibold">Grid search</div>
+					<div class="font-semibold">Start optimization</div>
 					<div class="text-xs text-gray-600">
 						{#if isWeightSearchRunning}
 							{weightSearchProgress.mode}
@@ -458,9 +426,9 @@
 						{:else if filteredRules.length === 0}
 							Waiting for situations to generate…
 						{:else if lastBestWeights}
-							Completed latest grid search.
+							Completed latest optimization.
 						{:else}
-							Grid search not started.
+							Optimization not started.
 						{/if}
 					</div>
 					<div class="pt-1">
@@ -470,21 +438,12 @@
 							disabled={isWeightSearchRunning ||
 								filteredRules.length === 0 ||
 								localSituationsStatus.loading}>
-							{lastBestWeights ? "Refine around best" : "Start grid search"}
+							Start search
 						</button>
-						<label class="mt-2 flex items-center gap-2 text-xs text-gray-600">
-							<span>Samples per axis</span>
-							<input
-								type="number"
-								min="2"
-								step="1"
-								class="w-20 rounded border border-gray-300 px-2 py-1 text-xs text-gray-800 focus:border-amber-500 focus:outline-none"
-								bind:value={samplesPerAxis}
-								disabled={isWeightSearchRunning || localSituationsStatus.loading} />
-						</label>
 						<p class="mt-2 max-w-xl text-xs text-gray-600">
-							Estimate the base b in O(b<sup>μ</sup>) by sweeping the weight grid; the best measure
-							and limiting situation (when present) are summarized here.
+							Heuristically find a measure that minimizes the base b in O(b<sup>μ</sup>) that upper
+							bounds all recurrence relations; the best measure and limiting situation are
+							summarized here.
 						</p>
 						{#if lastBestWeights && lastBestBase !== null}
 							<div
@@ -498,13 +457,13 @@
 												raw={`μ = ${new Measure(lastBestWeights.coefficients).toString()}`} />
 										</span>
 									</div>
-									<div>Base: O({lastBestBase.toFixed(4)}<sup>μ</sup>)</div>
-									{#if lastBestSituationId !== null}
-										<div>Limiting situation: #{lastBestSituationId}</div>
-										{#if !localSituationsStatus.loading && ALL_LOCAL_SITUATIONS[lastBestSituationId]}
+									<div>Base: O({formatNumber(lastBestBase)}<sup>μ</sup>)</div>
+									{#if limitingSituationId !== null}
+										<div>Limiting situation: #{limitingSituationId}</div>
+										{#if !localSituationsStatus.loading && ALL_LOCAL_SITUATIONS[limitingSituationId]}
 											<div class="mt-2 w-fit rounded border border-dotted bg-white p-2">
 												<GraphView
-													graph={ALL_LOCAL_SITUATIONS[lastBestSituationId].canon}
+													graph={ALL_LOCAL_SITUATIONS[limitingSituationId].canon}
 													scale={0.6} />
 											</div>
 										{/if}
@@ -645,7 +604,7 @@
 			{#await sortedDisplaySituations}
 				Waiting
 			{:then x}
-				{#each x as s (s)}
+				{#each x as s (ALL_LOCAL_SITUATIONS[s].signature)}
 					{@const rulesForSituation = AUTOGENERATED_RULES[s] ?? []}
 					<div class="space-y-4 rounded-lg border bg-gray-50 p-4">
 						<div class="flex items-start justify-between gap-3">

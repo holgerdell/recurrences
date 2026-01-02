@@ -1,83 +1,90 @@
-import {
-	iterateMeasureGrid,
-	numberOfGridPoints,
-	type Feature,
-	type Measure
-} from "$lib/coloring/measure"
+import { degreeFeatureProvider, type Feature, Measure } from "$lib/coloring/measure"
 import type { BranchingRuleWithAnalysis } from "$lib/coloring/rule-engine"
-import { buildCell, type WeightGridCell } from "./weight-grid-shared"
+import { evaluateMeasure } from "./weight-grid-shared"
+import {
+	optimizeVectorNelderMead,
+	type OptimizationCallbacks,
+	type OptimizeVectorParams
+} from "$lib/vector-optimizer"
+/* -----------------------------
+   Worker message types
+-------------------------------- */
 
 export type GridWorkerInput = {
 	type: "start"
 	ruleGroups: BranchingRuleWithAnalysis[][]
 	minPartialMeasure?: Partial<Record<Feature, number>>
 	maxPartialMeasure?: Partial<Record<Feature, number>>
-	samplesPerAxis: number
-}
-
-export type GridWorkerProgressMessage = {
-	type: "progress"
-	percent: number
-}
-
-export type GridWorkerCellMessage = {
-	type: "currentBest"
-	cell: WeightGridCell
-}
-
-export type GridWorkerDoneMessage = {
-	type: "done"
-}
-
-export type GridWorkerErrorMessage = {
-	type: "error"
-	message: string
 }
 
 export type GridWorkerMessage =
-	| GridWorkerProgressMessage
-	| GridWorkerCellMessage
-	| GridWorkerDoneMessage
-	| GridWorkerErrorMessage
+	| { type: "progress"; percent: number }
+	| { type: "currentBest"; x: number[]; value: number }
+	| { type: "done" }
+	| { type: "error"; message: string }
+
+function postMessage(message: GridWorkerMessage): void {
+	self.postMessage(message)
+}
+
+/* -----------------------------
+   Worker entry point
+-------------------------------- */
 
 self.onmessage = async (event: MessageEvent<GridWorkerInput>) => {
 	if (event.data?.type !== "start") return
-	const { ruleGroups, samplesPerAxis, minPartialMeasure, maxPartialMeasure } = event.data
 
+	const { ruleGroups, minPartialMeasure, maxPartialMeasure } = event.data
+
+	const features = degreeFeatureProvider.features
+	const dimension = features.length
+	const min = features.map(f => minPartialMeasure?.[f] ?? 0)
+	const max = features.map(f => maxPartialMeasure?.[f] ?? 1)
+
+	const callbacks: OptimizationCallbacks = {
+		onProgress: percent => {
+			postMessage({ type: "progress", percent })
+		},
+		onNewBest: (x, value) => {
+			postMessage({ type: "currentBest", x, value })
+		}
+	}
 	try {
-		let best: { weights?: Measure; base: number } = { base: Infinity }
-
-		const totalNumberOfGridPoints = numberOfGridPoints(
-			samplesPerAxis,
-			minPartialMeasure,
-			maxPartialMeasure
+		const param: OptimizeVectorParams = {
+			dimension,
+			min,
+			max,
+			evaluate: x => {
+				const w = new Measure(
+					Object.fromEntries(features.map((f, i) => [f, x[i]])) as Record<Feature, number>
+				)
+				return evaluateMeasure(w, ruleGroups)
+			},
+			initialSamples: 3000 * dimension,
+			topK: 200
+		}
+		await optimizeVectorNelderMead(
+			{
+				...param,
+				maxIterations: 400,
+				tolerance: 1e-6
+			},
+			callbacks
 		)
-		let seenGridPoints = 0
-		let percent = 0
-		self.postMessage({ type: "progress", percent })
-		for (const w of iterateMeasureGrid(samplesPerAxis, minPartialMeasure, maxPartialMeasure)) {
-			const cell = await buildCell({ w, ruleGroups })
-			const base = cell.maxBase
-			if (base !== null && base < best.base) {
-				self.postMessage({ type: "currentBest", cell })
-				best = { weights: cell.w, base }
-			}
-			seenGridPoints += 1
-			const progressCandidate = seenGridPoints / totalNumberOfGridPoints
-			if (progressCandidate - percent > 0.001) {
-				percent = progressCandidate
-				self.postMessage({ type: "progress", percent })
-			}
-		}
-		const done: GridWorkerDoneMessage = {
-			type: "done"
-		}
-		self.postMessage(done)
+		// await optimizeVectorCMAES(
+		// 	{
+		// 		...param,
+		// 		generations: 120,
+		// 		sigma: 0.25,
+		// 		populationSize: 20
+		// 	},
+		// 	callbacks
+		// )
+		postMessage({ type: "done" })
 	} catch (error) {
-		const message: GridWorkerErrorMessage = {
+		postMessage({
 			type: "error",
 			message: error instanceof Error ? error.message : String(error)
-		}
-		self.postMessage(message)
+		})
 	}
 }

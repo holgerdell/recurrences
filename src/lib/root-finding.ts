@@ -55,15 +55,17 @@ export function snapInt(val: number, eps = 1e-6): number {
 }
 
 /**
- * Formats numbers to four decimals while trimming trailing zeros.
+ * Formats numbers to a given number of decimal digits while trimming trailing zeros.
  *
  * @param x - Value to format.
+ * @param digits - Number of decimal digits to keep.
  * @returns Human-readable numeric string.
  */
-export function formatNumber(x: number): string {
+export function formatNumber(x: number, digits: number = 4): string {
 	if (!Number.isFinite(x)) return String(x)
-	const roundedUp = Math.ceil(x * 1e4) / 1e4
-	return roundedUp.toFixed(4).replace(/\.?0+$/, "")
+	const factor = 10 ** digits
+	const roundedUp = Math.ceil(x * factor) / factor
+	return roundedUp.toFixed(digits).replace(/\.?0+$/, "")
 }
 
 /**

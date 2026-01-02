@@ -5,7 +5,7 @@
 	interface Props {
 		title: string
 		recurrences?: string
-		root?: Promise<Root | null | "divergent">
+		root?: Root | null | "divergent"
 		description?: string
 		error?: string
 		emptyMessage?: string

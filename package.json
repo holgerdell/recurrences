@@ -41,6 +41,7 @@
 		"vite-plugin-devtools-json": "^1.0.0"
 	},
 	"dependencies": {
+		"fmin": "^0.0.4",
 		"glpk.js": "^4.0.2"
 	}
 }

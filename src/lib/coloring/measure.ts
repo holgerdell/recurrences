@@ -1,16 +1,21 @@
+import { formatNumber } from "$lib/root-finding"
 import type { Graph, GraphNode } from "./graph-utils"
 
 const buildFeatureGE = (L: number, d: number) => ({
 	description: `number of vertices with lists of size ${L} and whose degree is ≥${d}`,
-	nodeProperty: (G: Graph, n: GraphNode) => n.colors.length === L && G.degree(n.id) >= d
+	nodeProperty: (G: Graph, n: GraphNode) => n.colors.length === L && G.degree(n.id) >= d,
+	requiresListSize: L,
+	normalizer: true // if L is maximum
 })
 
 const buildFeatureEQ = (L: number, d: number) => ({
 	description: `number of vertices with lists of size ${L} and whose degree is =${d}`,
-	nodeProperty: (G: Graph, n: GraphNode) => n.colors.length === L && G.degree(n.id) === d
+	nodeProperty: (G: Graph, n: GraphNode) => n.colors.length === L && G.degree(n.id) === d,
+	requiresListSize: L,
+	normalizer: false
 })
 
-const FeatureDefinition = {
+export const FeatureDefinition = {
 	"n_{4,≥5}": buildFeatureGE(4, 5),
 	"n_{4,4}": buildFeatureEQ(4, 4),
 	"n_{4,3}": buildFeatureEQ(4, 3),
@@ -92,7 +97,7 @@ export class Measure {
 	toString(): string {
 		return features
 			.filter(f => this.coefficients[f] !== 0)
-			.map(f => (this.coefficients[f] === 1 ? f : `${this.coefficients[f].toFixed(2)}·${f}`))
+			.map(f => `${formatNumber(this.coefficients[f], 2)}·${f}`)
 			.join(" + ")
 	}
 
@@ -149,7 +154,7 @@ export function* iterateMeasureGrid(
 		}
 	}
 
-	function* helper(index: number): IterableIterator<Measure> {
+	function* helper(index: number, max: number = 1): IterableIterator<Measure> {
 		if (index === features.length) {
 			const m = new Measure(coeffs)
 			yield m
@@ -158,8 +163,11 @@ export function* iterateMeasureGrid(
 		const f = features[index]
 		const values = valueGrid[f]
 		for (const v of values) {
+			if (v > max) {
+				continue
+			}
 			coeffs[f] = v
-			yield* helper(index + 1)
+			yield* helper(index + 1, v === 0 ? max : v)
 		}
 	}
 

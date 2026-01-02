@@ -45,60 +45,32 @@ export function buildRecurrenceSolutionsForWeights(
 	)
 }
 
-export async function buildCell({
-	w,
-	ruleGroups
-}: {
-	w: Measure
-	ruleGroups: BranchingRuleWithAnalysis[][]
-}): Promise<WeightGridCell> {
-	let maxBase = -Infinity
-	let limitingRuleId = -1
-	let limitingSituationId = -1
-	for (const group of ruleGroups) {
-		if (maxBase === Infinity) {
-			break
-		}
-
-		const groupRecurrences = group.map(r =>
-			buildScalarRecurrence(
-				r.branchDetails.map(b => b.featuresDelta),
+/**
+ * This is the main function that is used to compute the value of a given Measure with respect to
+ * given ruleGroups. For each local situation, we use the best rule under the given measure. Then we
+ * determine the worst local situation.
+ */
+export function evaluateMeasure(w: Measure, ruleGroups: BranchingRuleWithAnalysis[][]): number {
+	let valueOfWorstSituation = -Infinity
+	for (const situation of ruleGroups) {
+		if (valueOfWorstSituation === Infinity) break
+		let valueOfThisSituation = Infinity
+		for (const rule of situation) {
+			const r = buildScalarRecurrence(
+				rule.branchDetails.map(b => b.featuresDelta),
 				w
 			)
-		)
-
-		const solutions = await Promise.all(
-			groupRecurrences.map(x => x.equation).map(solveRecurrencesFromStrings)
-		)
-		if (solutions.length < groupRecurrences.length || groupRecurrences.length === 0) {
-			maxBase = Infinity
-			break
-		}
-		let groupMinBase = Infinity
-		let groupBestRuleId = -1
-		for (let i = 0; i < solutions.length; i++) {
-			const x = solutions[i]
-			const base = !x.ok || x.divergent ? null : Object.values(x.root)[0]
-			if (!groupRecurrences[i].decreasing || base === null || !Number.isFinite(base)) {
-				if (groupMinBase === Infinity) {
-					groupBestRuleId = group[i].ruleId
-				}
-			} else if (base < groupMinBase) {
-				groupMinBase = base
-				groupBestRuleId = group[i].ruleId
+			if (!r.decreasing) continue
+			const solution = solveRecurrencesFromStrings(r.equation)
+			if (!solution.ok || solution.divergent) continue
+			const valueOfThisRule = Object.values(solution.root)[0]
+			if (valueOfThisRule < valueOfThisSituation) {
+				valueOfThisSituation = valueOfThisRule
 			}
 		}
-		if (groupMinBase > maxBase) {
-			maxBase = groupMinBase
-			limitingRuleId = groupBestRuleId
-			limitingSituationId = group[0].situationId
+		if (valueOfThisSituation > valueOfWorstSituation) {
+			valueOfWorstSituation = valueOfThisSituation
 		}
 	}
-
-	return {
-		w,
-		limitingSituationId,
-		limitingRuleId,
-		maxBase
-	}
+	return valueOfWorstSituation
 }

@@ -51,9 +51,9 @@
 		})
 	})
 
-	async function computeRoot(s: string): Promise<Root | null | "divergent"> {
+	function computeRoot(s: string): Root | null | "divergent" {
 		const parsed = parseRecurrences(s)
-		if (!parsed.ok) return Promise.resolve(null)
+		if (!parsed.ok) return null
 		return solveRecurrenceSystem(parsed.recurrences)
 	}
 
