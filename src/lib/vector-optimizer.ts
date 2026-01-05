@@ -1,33 +1,59 @@
 import { nelderMead } from "fmin"
 import { LowDiscrepancySequence } from "./sobol"
 
-/* -----------------------------
-   Types
--------------------------------- */
-
+/**
+ * Callbacks for monitoring the progress of the optimization.
+ */
 export type OptimizationCallbacks = {
+	/**
+	 * Called when progress is made.
+	 *
+	 * @param percent - The completion percentage (0 to 1).
+	 */
 	onProgress?: (percent: number) => void
+	/**
+	 * Called when a new best solution is found.
+	 *
+	 * @param x - The coefficient values of the new best vector.
+	 * @param value - The objective function value for this vector.
+	 */
 	onNewBest?: (x: number[], value: number) => void
 }
 
+/**
+ * Parameters for vector optimization.
+ */
 export type OptimizeVectorParams = {
+	/** The number of dimensions in the search space. */
 	dimension: number
+	/** Lower bounds for each dimension. */
 	min: number[]
+	/** Upper bounds for each dimension. */
 	max: number[]
+	/**
+	 * The objective function to minimize.
+	 *
+	 * @param x - The vector to evaluate.
+	 * @returns The value of the function, or null if the vector is invalid.
+	 */
 	evaluate: (x: number[]) => number | null
-	initialSamples: number // total low-discrepancy samples
-	topK: number // how many seeds to refine
+	/** Total number of low-discrepancy samples for global search. */
+	initialSamples: number
+	/** Number of top candidates to refine locally. */
+	topK: number
 }
 
-/* -----------------------------
-   Helpers
--------------------------------- */
-
+/**
+ * Clamps a value between a minimum and maximum.
+ */
 function clamp(x: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, x))
 }
 
-function projectToBounds(x: number[], min: number[], max: number[]): number[] {
+/**
+ * Projects a vector into the defined bounds.
+ */
+function pointwiseClamp(x: number[], min: number[], max: number[]): number[] {
 	const out = new Array(x.length)
 	for (let i = 0; i < x.length; i++) {
 		out[i] = clamp(x[i], min[i], max[i])
@@ -35,15 +61,19 @@ function projectToBounds(x: number[], min: number[], max: number[]): number[] {
 	return out
 }
 
-/* -----------------------------
-   Main optimizer
--------------------------------- */
-
+/**
+ * Optimizes a vector using a hybrid approach: global sampling followed by Nelder-Mead refinement.
+ *
+ * @param params - Optimization parameters including Nelder-Mead specific settings.
+ * @param callbacks - Optional progress and result callbacks.
+ * @returns The best vector found and its objective value.
+ */
 export async function optimizeVectorNelderMead(
 	params: OptimizeVectorParams & {
-		/* Local refinement (Nelder–Mead) */
-		maxIterations: number // per-seed NM iterations
-		tolerance: number // convergence threshold
+		/** Maximum number of iterations for each Nelder-Mead refinement. */
+		maxIterations: number
+		/** Convergence tolerance for Nelder-Mead. */
+		tolerance: number
 	},
 	callbacks: OptimizationCallbacks = {}
 ): Promise<{ x: number[]; value: number }> {
@@ -62,14 +92,13 @@ export async function optimizeVectorNelderMead(
 	type Candidate = { x: number[]; value: number }
 	const candidates: Candidate[] = []
 
-	/* --- Phase 1: global sampling --- */
-
+	// Phase 1: Global sampling using a low-discrepancy sequence
 	for (let i = 0; i < initialSamples; i++) {
 		const u = sampler.next()
 
 		const x = u.map((v, j) => min[j] + v * (max[j] - min[j]))
 
-		const projected = projectToBounds(x, min, max)
+		const projected = pointwiseClamp(x, min, max)
 		const value = evaluate(projected)
 
 		if (value !== null && value < bestValue) {
@@ -90,14 +119,13 @@ export async function optimizeVectorNelderMead(
 	candidates.sort((a, b) => a.value - b.value)
 	const seeds = candidates.slice(0, topK)
 
-	/* --- Phase 2: Nelder–Mead refinement --- */
-
+	// Phase 2: Local refinement using Nelder-Mead starting from the best candidates
 	for (let i = 0; i < seeds.length; i++) {
 		const seed = seeds[i]
 
 		const result = nelderMead(
 			x => {
-				const projected = projectToBounds(x, min, max)
+				const projected = pointwiseClamp(x, min, max)
 				return evaluate(projected) ?? Infinity
 			},
 			seed.x,
@@ -106,7 +134,7 @@ export async function optimizeVectorNelderMead(
 
 		if (result.fx < bestValue) {
 			bestValue = result.fx
-			bestX = projectToBounds(result.x, min, max)
+			bestX = pointwiseClamp(result.x, min, max)
 			onNewBest?.(bestX, result.fx)
 		}
 
@@ -120,15 +148,20 @@ export async function optimizeVectorNelderMead(
 	return { x: bestX, value: bestValue }
 }
 
-/* -----------------------------
-   CMA-ES optimizer
--------------------------------- */
-
+/**
+ * Optimizes a vector using the Covariance Matrix Adaptation Evolution Strategy (CMA-ES).
+ *
+ * @param params - Optimization parameters including CMA-ES specific settings.
+ * @param callbacks - Optional progress and result callbacks.
+ * @returns The best vector found and its objective value.
+ */
 export async function optimizeVectorCMAES(
 	params: OptimizeVectorParams & {
-		/* CMA-ES specific */
-		sigma?: number // initial step size
+		/** Initial step size (standard deviation). */
+		sigma?: number
+		/** Number of generations to evolve. */
 		generations: number
+		/** Size of the population in each generation. */
 		populationSize?: number
 	},
 	callbacks: OptimizationCallbacks = {}
@@ -151,8 +184,7 @@ export async function optimizeVectorCMAES(
 		throw new Error("min/max bounds must match dimension")
 	}
 
-	/* ---------- helpers ---------- */
-
+	// Helper for generating normally distributed random numbers
 	const randn = (): number => {
 		let u = 0,
 			v = 0
@@ -161,10 +193,9 @@ export async function optimizeVectorCMAES(
 		return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)
 	}
 
-	const project = (x: number[]) => projectToBounds(x, min, max)
+	const project = (x: number[]) => pointwiseClamp(x, min, max)
 
-	/* ---------- Phase 1: global sampling ---------- */
-
+	// Phase 1: Global sampling to find a good starting point
 	const sampler = new LowDiscrepancySequence(dimension)
 
 	type Candidate = { x: number[]; value: number }
@@ -201,8 +232,7 @@ export async function optimizeVectorCMAES(
 	candidates.sort((a, b) => a.value - b.value)
 	const seed = candidates.slice(0, topK)[0].x
 
-	/* ---------- Phase 2: CMA-ES ---------- */
-
+	// Phase 2: CMA-ES evolution
 	const lambda = populationSize ?? 4 + Math.floor(3 * Math.log(dimension))
 	const mu = Math.floor(lambda / 2)
 

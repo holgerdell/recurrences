@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test"
 import { hasProperColoring } from "./proper-coloring"
-import { Graph, type GraphEdge, type GraphNode } from "./graph-utils"
+import { Graph, type GraphEdge, type GraphNode } from "./graph"
 
 const triangleEdges: GraphEdge[] = [
 	{ from: "a", to: "b" },

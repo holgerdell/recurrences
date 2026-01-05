@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Graph, type GraphNode } from "./graph-utils"
+import { Graph, type GraphNode } from "./graph"
 import {
 	enumerateStarSignatures,
 	colorsToMask,

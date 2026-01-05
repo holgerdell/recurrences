@@ -1,11 +1,15 @@
 <script lang="ts">
+	import {
+		formatAsymptotics,
+		formatPolynomialSystem,
+		type Root
+	} from "$lib/polynomial-system-solver"
 	import { parseRecurrences, recurrencesToPolynomialSystem } from "$lib/recurrence-solver"
-	import { formatAsymptotics, formatCharacteristicPolynomials, type Root } from "$lib/root-finding"
 
 	interface Props {
 		title: string
 		recurrences?: string
-		root?: Root | null | "divergent"
+		root?: Root | null
 		description?: string
 		error?: string
 		emptyMessage?: string
@@ -87,7 +91,7 @@
 						<div class="mb-1 text-sm text-slate-500">Characteristic polynomial</div>
 						<div
 							class="space-y-2 rounded bg-slate-50 p-2 font-mono text-sm text-slate-600 ring-1 ring-slate-200">
-							{#each formatCharacteristicPolynomials(recurrencesToPolynomialSystem(parsed.recurrences)) as poly (poly)}
+							{#each formatPolynomialSystem(recurrencesToPolynomialSystem(parsed.recurrences)) as poly (poly)}
 								<div>{poly}</div>
 							{/each}
 						</div>

@@ -1,42 +1,76 @@
-import { degreeFeatureProvider, type Feature, Measure } from "$lib/coloring/measure"
-import type { BranchingRuleWithAnalysis } from "$lib/coloring/rule-engine"
-import { evaluateMeasure } from "./weight-grid-shared"
+import {
+	evaluateMeasure,
+	features,
+	type FeatureVector,
+	type PartialFeatureVector,
+	type RuleDeltas
+} from "$lib/coloring/featureSpace"
 import {
 	optimizeVectorNelderMead,
 	type OptimizationCallbacks,
 	type OptimizeVectorParams
 } from "$lib/vector-optimizer"
-/* -----------------------------
-   Worker message types
--------------------------------- */
 
-export type GridWorkerInput = {
+/**
+ * Input message for the grid optimization worker.
+ */
+export type OptimizationWorkerInput = {
+	/** The type of action to perform. */
 	type: "start"
-	ruleGroups: BranchingRuleWithAnalysis[][]
-	minPartialMeasure?: Partial<Record<Feature, number>>
-	maxPartialMeasure?: Partial<Record<Feature, number>>
+	/** The groups of rule deltas to optimize against. */
+	ruleDeltasGroups: RuleDeltas[][]
+	/** Optional lower bounds for the feature vector coefficients. */
+	minPartialMeasure?: PartialFeatureVector
+	/** Optional upper bounds for the feature vector coefficients. */
+	maxPartialMeasure?: PartialFeatureVector
 }
 
-export type GridWorkerMessage =
-	| { type: "progress"; percent: number }
-	| { type: "currentBest"; x: number[]; value: number }
-	| { type: "done" }
-	| { type: "error"; message: string }
+/**
+ * Output messages sent from the grid optimization worker.
+ */
+export type OptimizationWorkerOutput =
+	| {
+			/** Progress update message. */
+			type: "progress"
+			/** Completion percentage (0 to 1). */
+			percent: number
+	  }
+	| {
+			/** New best solution found message. */
+			type: "currentBest"
+			/** The coefficient values of the best feature vector. */
+			x: number[]
+			/** The base value (objective function result) for this vector. */
+			value: number
+	  }
+	| {
+			/** Search completion message. */
+			type: "done"
+	  }
+	| {
+			/** Error message. */
+			type: "error"
+			/** The error description. */
+			message: string
+	  }
 
-function postMessage(message: GridWorkerMessage): void {
+/**
+ * Sends a message from the worker to the main thread.
+ *
+ * @param message - The message to send.
+ */
+function postMessage(message: OptimizationWorkerOutput): void {
 	self.postMessage(message)
 }
 
-/* -----------------------------
-   Worker entry point
--------------------------------- */
-
-self.onmessage = async (event: MessageEvent<GridWorkerInput>) => {
+/**
+ * Handles incoming messages from the main thread to start or manage optimization.
+ */
+self.onmessage = async (event: MessageEvent<OptimizationWorkerInput>) => {
 	if (event.data?.type !== "start") return
 
-	const { ruleGroups, minPartialMeasure, maxPartialMeasure } = event.data
+	const { ruleDeltasGroups, minPartialMeasure, maxPartialMeasure } = event.data
 
-	const features = degreeFeatureProvider.features
 	const dimension = features.length
 	const min = features.map(f => minPartialMeasure?.[f] ?? 0)
 	const max = features.map(f => maxPartialMeasure?.[f] ?? 1)
@@ -55,10 +89,8 @@ self.onmessage = async (event: MessageEvent<GridWorkerInput>) => {
 			min,
 			max,
 			evaluate: x => {
-				const w = new Measure(
-					Object.fromEntries(features.map((f, i) => [f, x[i]])) as Record<Feature, number>
-				)
-				return evaluateMeasure(w, ruleGroups)
+				const w = Object.fromEntries(features.map((f, i) => [f, x[i]])) as FeatureVector
+				return evaluateMeasure(w, ruleDeltasGroups)
 			},
 			initialSamples: 3000 * dimension,
 			topK: 200

@@ -1,5 +1,12 @@
-import { Graph, type Color, type GraphEdge, type GraphNode, type NodeId } from "./graph-utils"
-import { degreeFeatureProvider, Measure, type Feature, type FeatureVector } from "./measure"
+import { Graph, type Color, type GraphEdge, type GraphNode, type NodeId } from "./graph"
+import {
+	computeFeatureVector,
+	features,
+	innerProduct,
+	subtractFeatureVectors,
+	type Feature,
+	type FeatureVector
+} from "./featureSpace"
 import { hasProperColoring } from "./proper-coloring"
 
 /**
@@ -15,7 +22,6 @@ export interface Branch {
 export interface BranchingRule {
 	situationId: number
 	ruleId: number
-	situationRuleId: number
 	name: string
 	description: string
 	before: Graph
@@ -43,6 +49,93 @@ export interface BranchingRuleWithAnalysis extends BranchingRule {
 }
 
 /**
+ * Generate all possible branching rules for a given local situation. Note that in general, canon
+ * may have multiple roots, and we only want to enumerate assignments that are compatible.
+ */
+export function autogenerateRules({
+	canon,
+	situationId
+}: {
+	canon: Graph
+	situationId: number
+}): BranchingRule[] {
+	const roots = Array.from(canon.nodes).filter(node => node.role === "root")
+	if (roots.length !== 1) return []
+
+	const root = roots[0]
+	if (root.colors.length === 0) return []
+
+	const rules: BranchingRule[] = []
+
+	if (root.colors.length >= 2) {
+		const singletonBranches: BranchingRule["branches"] = root.colors.map(color => ({
+			assignments: { [root.id]: [color] as readonly Color[] }
+		}))
+		rules.push({
+			situationId,
+			ruleId: rules.length,
+			name: `Rule ${situationId}:${rules.length}`,
+			description: `Auto-generated for situation #${situationId}`,
+			before: canon,
+			branches: singletonBranches
+		})
+	}
+
+	// one-rest split. Eg. 1,2,3 -> 1 | 2,3
+	if (root.colors.length >= 3) {
+		const neighborIds = Array.from(canon.neighbors[root.id]).toSorted((a, b) => a.localeCompare(b))
+		const seenTypes = new Set<string>()
+		for (const color of root.colors) {
+			const typeKey = neighborIds.filter(id => canon.nodeById[id]?.colors.includes(color)).join("|")
+			if (seenTypes.has(typeKey)) continue
+			seenTypes.add(typeKey)
+			const remaining = root.colors.filter(c => c !== color) as readonly Color[]
+			const splitBranches: BranchingRule["branches"] = [
+				{ assignments: { [root.id]: [color] as readonly Color[] } },
+				{ assignments: { [root.id]: remaining } }
+			]
+			rules.push({
+				situationId,
+				ruleId: rules.length,
+				name: `Rule ${situationId}:${rules.length}`,
+				description: `Auto-generated for situation #${situationId}`,
+				before: canon,
+				branches: splitBranches
+			})
+		}
+	}
+
+	// two-rest split. Eg. 1,2,3,4 -> 1,3 | 2,4
+	if (root.colors.length >= 4) {
+		const seenSplits = new Set<string>()
+		for (let i = 0; i < root.colors.length; i++) {
+			for (let j = i + 1; j < root.colors.length; j++) {
+				const first = [root.colors[i], root.colors[j]] as readonly Color[]
+				const second = root.colors.filter((_, idx) => idx !== i && idx !== j) as readonly Color[]
+				const aKey = [...first].toSorted().join(",")
+				const bKey = [...second].toSorted().join(",")
+				const splitKey = aKey <= bKey ? `${aKey}|${bKey}` : `${bKey}|${aKey}`
+				if (seenSplits.has(splitKey)) continue
+				seenSplits.add(splitKey)
+				const splitBranches: BranchingRule["branches"] = [
+					{ assignments: { [root.id]: first } },
+					{ assignments: { [root.id]: second } }
+				]
+				rules.push({
+					situationId,
+					ruleId: rules.length,
+					name: `Rule ${situationId}:${rules.length}`,
+					description: `Auto-generated for situation #${situationId}`,
+					before: canon,
+					branches: splitBranches
+				})
+			}
+		}
+	}
+	return rules
+}
+
+/**
  * Produces a human-readable fragment describing a single vertex assignment.
  *
  * @param id - Vertex identifier being described.
@@ -67,9 +160,6 @@ export function describeAssignments(assignments: Record<string, readonly Color[]
 	return entries.join(", ")
 }
 
-// ============================================================
-// Apply branch + compute diffs
-// ============================================================
 /**
  * Applies branch assignments to the rule’s before-state and annotates node diffs.
  *
@@ -141,7 +231,7 @@ function applyBranchWithDiff(rule: BranchingRule, branch: Branch): Graph {
 
 	const nodeLookup = new Map(baseNodes.map(node => [node.id, node] as const))
 	const enhancedNodes: GraphNode[] = baseNodes.map(node => {
-		const neighbors = rule.before.neighbors(node.id)
+		const neighbors = rule.before.neighbors[node.id]
 		if (!neighbors || neighbors.size < 2 || node.colors.length === 0) return node
 		const removal = new Set<Color>()
 		const neighborIds = Array.from(neighbors)
@@ -150,7 +240,7 @@ function applyBranchWithDiff(rule: BranchingRule, branch: Branch): Graph {
 				const left = nodeLookup.get(neighborIds[i])
 				const right = nodeLookup.get(neighborIds[j])
 				if (!left || !right) continue
-				if (!rule.before.neighbors(left.id)?.has(right.id)) continue
+				if (!rule.before.neighbors[left.id]?.has(right.id)) continue
 				if (left.colors.length !== 2 || right.colors.length !== 2) continue
 				if (!listsMatch(left.colors, right.colors)) continue
 				for (const color of left.colors) removal.add(color)
@@ -264,7 +354,6 @@ function applyBranchWithDiff(rule: BranchingRule, branch: Branch): Graph {
  * @returns Display string and compact equation form.
  */
 export function buildRecurrenceStrings(deltas: FeatureVector[], onlyRHS = false) {
-	const features = degreeFeatureProvider.features
 	const nonZero = new Set<Feature>()
 	for (const delta of deltas) {
 		for (const f of features) {
@@ -288,6 +377,11 @@ export function buildRecurrenceStrings(deltas: FeatureVector[], onlyRHS = false)
 }
 
 /**
+ * Represents a scalar recurrence that has been weighted by a feature vector.
+ */
+export type WeightedScalarRecurrence = { equation: string; drops: number[]; decreasing: boolean }
+
+/**
  * Projects the measure deltas onto a scalar recurrence using the supplied weights.
  *
  * @param deltas - Measure drops for each branch.
@@ -296,9 +390,9 @@ export function buildRecurrenceStrings(deltas: FeatureVector[], onlyRHS = false)
  */
 export function buildScalarRecurrence(
 	deltas: FeatureVector[],
-	weights: Measure
-): { equation: string; drops: number[]; decreasing: boolean } {
-	const drops = deltas.map(delta => weights.computeMeasure(delta))
+	weights: FeatureVector
+): WeightedScalarRecurrence {
+	const drops = deltas.map(delta => innerProduct(weights, delta))
 	const counts = new Map<number, number>()
 	for (const drop of drops) {
 		counts.set(drop, (counts.get(drop) ?? 0) + 1)
@@ -361,11 +455,5 @@ export function analyzeRule(
  * @returns Array of rule analysis results in the same order as input.
  */
 export function analyzeRules(rulesToAnalyze: BranchingRule[]): BranchingRuleWithAnalysis[] {
-	return rulesToAnalyze.map(rule =>
-		analyzeRule(
-			rule,
-			degreeFeatureProvider.computeFeatureVector,
-			degreeFeatureProvider.subtractFeatureVectors
-		)
-	)
+	return rulesToAnalyze.map(rule => analyzeRule(rule, computeFeatureVector, subtractFeatureVectors))
 }

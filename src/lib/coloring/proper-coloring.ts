@@ -1,4 +1,4 @@
-import { Graph, type Color } from "./graph-utils"
+import { Graph, type Color } from "./graph"
 
 /**
  * Performs a simple backtracking search to determine if a proper coloring exists.
@@ -7,12 +7,12 @@ import { Graph, type Color } from "./graph-utils"
  * @returns True when a valid list coloring assignment is found.
  */
 export function hasProperColoring(G: Graph): boolean {
-	const nodes = Array.from(G.nodes)
+	const nodes = G.nodes
 	if (nodes.length === 0) return true
 	const assignment: Record<string, Color | undefined> = {}
 
 	const canUse = (nodeId: string, color: Color): boolean => {
-		for (const neighbor of G.neighbors(nodeId)) {
+		for (const neighbor of G.neighbors[nodeId]) {
 			if (assignment[neighbor] === color) return false
 		}
 		return true

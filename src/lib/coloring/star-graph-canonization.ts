@@ -8,8 +8,8 @@
  * - Leaves are ordered by larger lists first, then higher bitmask, then smaller halfedge count.
  * - Color lists are encoded as hex masks; canonical prefixes enforce ordered color renaming.
  */
-import { character } from "./3coloring-rules"
-import { Graph, type GraphNode, type GraphEdge, type Color } from "./graph-utils"
+import { character, popcount } from "$lib/utils"
+import { Graph, type GraphNode, type GraphEdge, type Color } from "./graph"
 
 /**
  * Decode a single hex digit produced by {@link encodeColors} back into a color set.
@@ -186,8 +186,6 @@ export const parseStarGraph = (s: string): Graph => {
 	return new Graph(nodes, edges)
 }
 
-/////////// Enumeration tools
-
 /**
  * Remap color masks to their canonical ordering using the incidence-profile ordering.
  *
@@ -215,25 +213,14 @@ export const canonicalizeColorMasks = (
 }
 
 /**
- * Popcount for 4-bit masks.
- *
- * @param x - Unsigned integer whose low 4 bits encode a color mask.
- * @returns Number of set bits in the low 4 bits of x.
- */
-const popcount = (x: number): number =>
-	((x >> 0) & 1) + ((x >> 1) & 1) + ((x >> 2) & 1) + ((x >> 3) & 1)
-
-/**
  * Global: leafMasks[p] is a sorted array of all masks with popcount p (for p in 0..4).
  */
-const leafMasks: number[][] = []
-for (let i = 0; i <= 4; i++) {
-	leafMasks.push([])
-}
-for (let mask = 0; mask < 16; mask++) {
-	const p = popcount(mask)
-	leafMasks[p].push(mask)
-}
+const leafMasks: number[][] = (() => {
+	const tmp: number[][] = []
+	for (let i = 0; i <= 4; i++) tmp.push([])
+	for (let mask = 0; mask < 16; mask++) tmp[popcount(mask)].push(mask)
+	return tmp
+})()
 
 /**
  * Enumerate canonical star signature strings across degree and list-size ranges.

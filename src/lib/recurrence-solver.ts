@@ -10,7 +10,7 @@ import {
 	type PolynomialSystem,
 	type Root,
 	dominantRoot
-} from "./root-finding"
+} from "./polynomial-system-solver"
 
 // ======================================================
 //   Recurrence type definitions
@@ -343,7 +343,7 @@ export function recurrencesToPolynomialSystem(recurrences: Recurrence): Polynomi
  * @param recurrences - Parsed recurrence system
  * @returns Map of variable names to dominant roots, or null when unsolved
  */
-export function solveRecurrenceSystem(recurrences: Recurrence): Root | "divergent" | null {
+export function solveRecurrenceSystem(recurrences: Recurrence): Root | null {
 	const system = recurrencesToPolynomialSystem(recurrences)
 	const roots = dominantRoot(system)
 	return roots
@@ -366,10 +366,10 @@ export function solveRecurrencesFromStrings(
 	if (!parsed.ok) return { ok: false, error: parsed.error }
 	const r = solveRecurrenceSystem(parsed.recurrences)
 
-	if (r === "divergent") {
-		return { ok: true, divergent: true }
-	} else if (r === null) {
+	if (r === null) {
 		return { ok: false, error: "Returned null for unknown reason" }
+	} else if (Object.values(r).find((x: number) => x === Infinity)) {
+		return { ok: true, divergent: true }
 	} else {
 		return { ok: true, root: r, divergent: false }
 	}

@@ -9,7 +9,6 @@
 		solveRecurrenceSystem,
 		type Recurrence
 	} from "$lib/recurrence-solver"
-	import type { Root } from "$lib/root-finding"
 
 	// --- Persistent log state ---
 	const logState = new LocalStorageState<string[]>({
@@ -51,7 +50,7 @@
 		})
 	})
 
-	function computeRoot(s: string): Root | null | "divergent" {
+	function computeRoot(s: string) {
 		const parsed = parseRecurrences(s)
 		if (!parsed.ok) return null
 		return solveRecurrenceSystem(parsed.recurrences)

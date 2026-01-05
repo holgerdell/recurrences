@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { SvelteMap, SvelteSet } from "svelte/reactivity"
-	import type { Graph, GraphNode } from "$lib/coloring/graph-utils"
+	import type { Graph, GraphNode } from "$lib/coloring/graph"
 
 	// ============================================================
 	// Props
@@ -62,7 +62,7 @@
 			const v = queue.shift()!
 			const d = dist.get(v)!
 
-			for (const u of graph.neighbors(v)) {
+			for (const u of graph.neighbors[v]) {
 				if (!dist.has(u)) {
 					dist.set(u, d + 1)
 					queue.push(u)
