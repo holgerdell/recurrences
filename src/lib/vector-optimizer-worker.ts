@@ -1,15 +1,14 @@
 import {
-	evaluateMeasure,
 	features,
+	type RuleDeltas,
 	type FeatureVector,
-	type PartialFeatureVector,
-	type RuleDeltas
-} from "$lib/coloring/featureSpace"
+	evaluateMeasure
+} from "./coloring/featureSpace"
 import {
-	optimizeVectorNelderMead,
 	type OptimizationCallbacks,
-	type OptimizeVectorParams
-} from "$lib/vector-optimizer"
+	type OptimizeVectorParams,
+	optimizeVectorNelderMead
+} from "./vector-optimizer"
 
 /**
  * Input message for the grid optimization worker.
@@ -19,10 +18,9 @@ export type OptimizationWorkerInput = {
 	type: "start"
 	/** The groups of rule deltas to optimize against. */
 	ruleDeltasGroups: RuleDeltas[][]
-	/** Optional lower bounds for the feature vector coefficients. */
-	minPartialMeasure?: PartialFeatureVector
-	/** Optional upper bounds for the feature vector coefficients. */
-	maxPartialMeasure?: PartialFeatureVector
+	/** Point-wise lower and upper bounds for the solution vector. */
+	min: number[]
+	max: number[]
 }
 
 /**
@@ -34,6 +32,12 @@ export type OptimizationWorkerOutput =
 			type: "progress"
 			/** Completion percentage (0 to 1). */
 			percent: number
+	  }
+	| {
+			/** Phase update message. */
+			type: "phase"
+			/** Description of the current phase. */
+			phase: string
 	  }
 	| {
 			/** New best solution found message. */
@@ -69,11 +73,9 @@ function postMessage(message: OptimizationWorkerOutput): void {
 self.onmessage = async (event: MessageEvent<OptimizationWorkerInput>) => {
 	if (event.data?.type !== "start") return
 
-	const { ruleDeltasGroups, minPartialMeasure, maxPartialMeasure } = event.data
+	const { ruleDeltasGroups, min, max } = event.data
 
 	const dimension = features.length
-	const min = features.map(f => minPartialMeasure?.[f] ?? 0)
-	const max = features.map(f => maxPartialMeasure?.[f] ?? 1)
 
 	const callbacks: OptimizationCallbacks = {
 		onProgress: percent => {
@@ -81,6 +83,9 @@ self.onmessage = async (event: MessageEvent<OptimizationWorkerInput>) => {
 		},
 		onNewBest: (x, value) => {
 			postMessage({ type: "currentBest", x, value })
+		},
+		onPhase: phase => {
+			postMessage({ type: "phase", phase })
 		}
 	}
 	try {
@@ -92,13 +97,13 @@ self.onmessage = async (event: MessageEvent<OptimizationWorkerInput>) => {
 				const w = Object.fromEntries(features.map((f, i) => [f, x[i]])) as FeatureVector
 				return evaluateMeasure(w, ruleDeltasGroups)
 			},
-			initialSamples: 3000 * dimension,
-			topK: 200
+			initialSamples: 600 * dimension,
+			topK: 5
 		}
 		await optimizeVectorNelderMead(
 			{
 				...param,
-				maxIterations: 400,
+				maxIterations: 4000,
 				tolerance: 1e-6
 			},
 			callbacks
@@ -106,9 +111,10 @@ self.onmessage = async (event: MessageEvent<OptimizationWorkerInput>) => {
 		// await optimizeVectorCMAES(
 		// 	{
 		// 		...param,
-		// 		generations: 120,
+		// 		topK: 1,
+		// 		generations: 200,
 		// 		sigma: 0.25,
-		// 		populationSize: 20
+		// 		populationSize: 80
 		// 	},
 		// 	callbacks
 		// )

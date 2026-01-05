@@ -259,11 +259,7 @@ export function* enumerateStarSignatures(
 		}
 		for (let i = start; i < leafMasks[leafListSize].length; i++) {
 			leaves.push(leafMasks[leafListSize][i])
-
-			// Due to the list-size 2 reduction rule, we can assume that the center with two colors does not have two leaves with the same color lists
-			const skipDuplicateCenter =
-				centerListSize === 2 && centerMask === leafMasks[leafListSize][i] ? 1 : 0
-			yield* backtrackLeaves(i + skipDuplicateCenter)
+			yield* backtrackLeaves(i)
 			leaves.pop()
 		}
 	}
@@ -296,5 +292,22 @@ export function* enumerateStarSignatures(
 
 		const centerHex = canonCenter.toString(16).toUpperCase()
 		yield `S${degree}-C0:${centerHex}-L${leafPart}`
+	}
+}
+
+/**
+ * Enumerates all possible star graph signatures within defined constraints. @yields Canonical star
+ * graph signatures.
+ */
+export function* enumerateSituations() {
+	for (let centerListSize = 2; centerListSize <= 4; centerListSize++) {
+		for (let leafListSize = centerListSize; leafListSize <= 4; leafListSize++) {
+			for (let degree = 3; degree <= 10; degree++) {
+				for (let halfedges = 2; halfedges <= 10; halfedges++) {
+					if (centerListSize === leafListSize && degree < halfedges + 1) continue
+					yield* enumerateStarSignatures(degree, halfedges, centerListSize, leafListSize)
+				}
+			}
+		}
 	}
 }

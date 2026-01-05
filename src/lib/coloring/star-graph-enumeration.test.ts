@@ -6,7 +6,7 @@ import {
 	parseStarGraph,
 	stringifyStarGraph,
 	canonicalColorMap
-} from "./star-graph-canonization"
+} from "./star-graph-enumeration"
 
 type Leaf = Pick<GraphNode, "id" | "colors" | "halfedges">
 

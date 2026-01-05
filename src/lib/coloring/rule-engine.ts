@@ -1,12 +1,5 @@
 import { Graph, type Color, type GraphEdge, type GraphNode, type NodeId } from "./graph"
-import {
-	computeFeatureVector,
-	features,
-	innerProduct,
-	subtractFeatureVectors,
-	type Feature,
-	type FeatureVector
-} from "./featureSpace"
+import { features, innerProduct, type Feature, type FeatureVector } from "./featureSpace"
 import { hasProperColoring } from "./proper-coloring"
 
 /**
@@ -29,22 +22,17 @@ export interface BranchingRule {
 }
 
 /**
- * Captures the effect of applying a single branch, including measures and colorability.
- */
-export interface BranchAnalysis {
-	after: Graph
-	featuresAfter: FeatureVector
-	featuresDelta: FeatureVector
-	hasColoring: boolean
-}
-
-/**
  * Summarizes analyzer output for an entire rule and its recurrence impact.
  */
 export interface BranchingRuleWithAnalysis extends BranchingRule {
 	featuresBefore: FeatureVector
 	beforeHasColoring: boolean
-	branchDetails: BranchAnalysis[]
+	branchDetails: ReadonlyArray<{
+		after: Graph
+		featuresAfter: FeatureVector
+		featuresDelta: FeatureVector
+		hasColoring: boolean
+	}>
 	recurrenceEquation: string
 }
 
@@ -161,13 +149,83 @@ export function describeAssignments(assignments: Record<string, readonly Color[]
 }
 
 /**
+ * Applies branch assignments for the independent set problem. In this case, color 1 means "in the
+ * independent set" and color 2 means "not in".
+ *
+ * @param rule - Branching rule providing the baseline context.
+ * @param branch - Specific branch assignments to apply.
+ * @returns New graph reflecting the independent set constraints.
+ */
+function applyIndependentSetBranch(rule: BranchingRule, branch: Branch): Graph {
+	const nodes = rule.before.nodes.map(n => ({
+		...n,
+		colors: [...n.colors],
+		removedColors: n.removedColors ? [...n.removedColors] : undefined,
+		diff: "unchanged" as "changed" | "unchanged"
+	}))
+	const nodeMap = new Map(nodes.map(n => [n.id, n]))
+
+	// Apply direct assignments from the branch
+	for (const [id, colors] of Object.entries(branch.assignments)) {
+		const node = nodeMap.get(id)
+		if (node) {
+			const removed = node.colors.filter(c => !colors.includes(c))
+			node.colors = [...colors]
+			if (removed.length > 0) {
+				node.removedColors = [...new Set([...(node.removedColors ?? []), ...removed])]
+				node.diff = "changed"
+			}
+		}
+	}
+
+	// Propagate constraints: if a node is in the independent set (color 1),
+	// all its neighbors must be out of the independent set (color 2).
+	for (const node of nodes) {
+		if (node.colors.length === 1 && node.colors[0] === 1) {
+			const neighbors = rule.before.neighbors[node.id]
+			if (neighbors) {
+				for (const neighborId of neighbors) {
+					const neighbor = nodeMap.get(neighborId)
+					if (neighbor && neighbor.colors.includes(1)) {
+						neighbor.colors = neighbor.colors.filter(c => c !== 1)
+						neighbor.removedColors = [...new Set([...(neighbor.removedColors ?? []), 1])]
+						neighbor.diff = "changed"
+					}
+				}
+			}
+		}
+	}
+
+	return new Graph(nodes, Array.from(rule.before.edges))
+}
+
+/**
  * Applies branch assignments to the rule’s before-state and annotates node diffs.
  *
  * @param rule - Branching rule providing the baseline context.
  * @param branch - Specific branch assignments to apply.
  * @returns New node and edge arrays reflecting constraint propagation.
  */
-function applyBranchWithDiff(rule: BranchingRule, branch: Branch): Graph {
+function applyBranchingRule(
+	rule: BranchingRule,
+	branch: Branch,
+	problem: "independent set" | "list coloring"
+): Graph {
+	if (problem === "independent set") {
+		return applyIndependentSetBranch(rule, branch)
+	}
+	return applyListColoringBranch(rule, branch)
+}
+
+/**
+ * Applies branch assignments for standard list-coloring, including constraint propagation (e.g.,
+ * neighbor exclusion) and node merging for common neighbors.
+ *
+ * @param rule - Branching rule providing the baseline context.
+ * @param branch - Specific branch assignments to apply.
+ * @returns New graph reflecting the list-coloring constraints.
+ */
+function applyListColoringBranch(rule: BranchingRule, branch: Branch): Graph {
 	const roots = new Set<NodeId>()
 	for (const n of rule.before.nodes) {
 		if (n.role === "root") roots.add(n.id)
@@ -426,12 +484,13 @@ export function buildScalarRecurrence(
 export function analyzeRule(
 	rule: BranchingRule,
 	computeFeatureVector: (G: Graph) => FeatureVector,
-	subtractFeatureVectors: (a: FeatureVector, b: FeatureVector) => FeatureVector
+	subtractFeatureVectors: (a: FeatureVector, b: FeatureVector) => FeatureVector,
+	problem: "independent set" | "list coloring"
 ): BranchingRuleWithAnalysis {
 	const featuresBefore = computeFeatureVector(rule.before)
 	const beforeHasColoring = hasProperColoring(rule.before)
 	const branchDetails = rule.branches.map(branch => {
-		const after = applyBranchWithDiff(rule, branch)
+		const after = applyBranchingRule(rule, branch, problem)
 		const featuresAfter = computeFeatureVector(after)
 		const hasColoring = hasProperColoring(after)
 		const featuresDelta = subtractFeatureVectors(featuresBefore, featuresAfter)
@@ -446,14 +505,4 @@ export function analyzeRule(
 		branchDetails,
 		recurrenceEquation
 	}
-}
-
-/**
- * Convenience helper that analyzes a batch of rules sequentially.
- *
- * @param rulesToAnalyze - Rules queued for analysis.
- * @returns Array of rule analysis results in the same order as input.
- */
-export function analyzeRules(rulesToAnalyze: BranchingRule[]): BranchingRuleWithAnalysis[] {
-	return rulesToAnalyze.map(rule => analyzeRule(rule, computeFeatureVector, subtractFeatureVectors))
 }

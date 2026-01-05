@@ -1,20 +1,5 @@
-import { browser } from "$app/environment"
 import type { Color, Graph } from "$lib/coloring/graph"
-import {
-	computeFeatureVector,
-	FeatureDefinition,
-	features,
-	subtractFeatureVectors,
-	type FeatureVector,
-	type PartialFeatureVector
-} from "$lib/coloring/featureSpace"
-import {
-	analyzeRule,
-	autogenerateRules,
-	type BranchingRuleWithAnalysis
-} from "$lib/coloring/rule-engine"
-import { enumerateStarSignatures, parseStarGraph } from "$lib/coloring/star-graph-canonization"
-import type { OptimizationWorkerInput, OptimizationWorkerOutput } from "./worker"
+import { FeatureDefinition, features, type PartialFeatureVector } from "$lib/coloring/featureSpace"
 
 /**
  * Represents the available options for restricting color list sizes in the graph.
@@ -24,7 +9,7 @@ export type ColorListSizes = "size234" | "size23" | "size2"
 /**
  * Represents the available color palettes for the coloring problem.
  */
-export type ColorPalette = "1234" | "123"
+export type ColorPalette = "1234" | "123" | "12"
 
 /**
  * Represents a local situation (neighborhood) in a graph, including its canonical form.
@@ -87,6 +72,12 @@ export const colorPaletteOptions: Array<{
 		label: "List 3-Coloring",
 		description: "Color Palette = {1,2,3}",
 		colors: [1, 2, 3]
+	},
+	{
+		key: "12",
+		label: "Weighted Independent Set",
+		description: "Color Palette = {1,2}",
+		colors: [1, 2]
 	}
 ]
 
@@ -140,6 +131,8 @@ export function getFixedPartialMeasure(
 		listSizeUpTo = 4
 	} else if (selectedPalette === "123") {
 		listSizeUpTo = 3
+	} else if (selectedPalette === "12") {
+		listSizeUpTo = 2
 	}
 	if (selectedColorListSize === "size23") {
 		listSizeUpTo = 3
@@ -174,110 +167,4 @@ export function buildDefaultBounds(fixedPartialMeasure: PartialFeatureVector) {
 		}
 	}
 	return { min, max }
-}
-
-/**
- * Enumerates all possible star graph signatures within defined constraints. @yields Canonical star
- * graph signatures.
- */
-export function* enumerateSituations() {
-	for (let centerListSize = 2; centerListSize <= 4; centerListSize++) {
-		for (let leafListSize = centerListSize; leafListSize <= 4; leafListSize++) {
-			for (let degree = 3; degree <= 7; degree++) {
-				for (let halfedges = 2; halfedges <= 7; halfedges++) {
-					if (centerListSize === leafListSize && degree < halfedges + 1) continue
-					yield* enumerateStarSignatures(degree, halfedges, centerListSize, leafListSize)
-				}
-			}
-		}
-	}
-}
-
-/**
- * Parses a signature and generates branching rules for the resulting situation.
- *
- * @param signature - The star graph signature.
- * @param situationId - The unique ID for this situation.
- * @returns The situation object and its analyzed branching rules.
- */
-export function analyzeSituation(signature: string, situationId: number) {
-	const G = parseStarGraph(signature)
-	const situation: LocalSituation = { canon: G, situationId, signature }
-	const rules = autogenerateRules(situation).map(x =>
-		analyzeRule(x, computeFeatureVector, subtractFeatureVectors)
-	)
-	return { situation, rules }
-}
-
-/**
- * Manages the lifecycle of the optimization Web Worker.
- */
-export class OptimizationManager {
-	private worker: Worker | null = null
-	private searchVersion = 0
-
-	/**
-	 * Starts a new optimization search.
-	 *
-	 * @param params - Optimization parameters and callbacks.
-	 */
-	start(params: {
-		ruleAnalyses: BranchingRuleWithAnalysis[][]
-		bounds: { min: PartialFeatureVector; max: PartialFeatureVector }
-		onProgress: (percent: number) => void
-		onBest: (weights: FeatureVector, base: number) => void
-		onDone: () => void
-		onError: (msg: string) => void
-	}) {
-		if (!browser) return
-		this.stop()
-		const version = ++this.searchVersion
-
-		this.worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" })
-		this.worker.onmessage = (event: MessageEvent<OptimizationWorkerOutput>) => {
-			if (version !== this.searchVersion) return
-			const message = event.data
-			if (message.type === "progress") {
-				params.onProgress(message.percent)
-			} else if (message.type === "currentBest") {
-				const { x, value } = message
-				const w = Object.fromEntries(features.map((f, i) => [f, x[i]])) as FeatureVector
-				params.onBest(w, value)
-			} else if (message.type === "done") {
-				params.onDone()
-			} else if (message.type === "error") {
-				params.onError(message.message)
-			}
-		}
-		this.worker.onerror = err => {
-			if (version !== this.searchVersion) return
-			params.onError(String(err))
-		}
-
-		const payload: OptimizationWorkerInput = {
-			type: "start",
-			ruleDeltasGroups: params.ruleAnalyses.map(group =>
-				group.map(rule => rule.branchDetails.map(b => ({ ...b.featuresDelta })))
-			),
-			minPartialMeasure: { ...params.bounds.min },
-			maxPartialMeasure: { ...params.bounds.max }
-		}
-		this.worker.postMessage(payload)
-	}
-
-	/**
-	 * Terminates the current optimization search.
-	 */
-	stop() {
-		this.searchVersion++
-		this.worker?.terminate()
-		this.worker = null
-	}
-
-	/**
-	 * Whether an optimization search is currently running.
-	 */
-	get isRunning() {
-		return this.worker !== null
-	}
 }

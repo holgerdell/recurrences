@@ -18,6 +18,12 @@ export type OptimizationCallbacks = {
 	 * @param value - The objective function value for this vector.
 	 */
 	onNewBest?: (x: number[], value: number) => void
+	/**
+	 * Called when the optimization phase changes.
+	 *
+	 * @param phase - A description of the current phase.
+	 */
+	onPhase?: (phase: string) => void
 }
 
 /**
@@ -78,7 +84,7 @@ export async function optimizeVectorNelderMead(
 	callbacks: OptimizationCallbacks = {}
 ): Promise<{ x: number[]; value: number }> {
 	const { dimension, min, max, evaluate, initialSamples, topK, maxIterations, tolerance } = params
-	const { onProgress, onNewBest } = callbacks
+	const { onProgress, onNewBest, onPhase } = callbacks
 
 	if (min.length !== dimension || max.length !== dimension) {
 		throw new Error("min/max bounds must match dimension")
@@ -92,6 +98,7 @@ export async function optimizeVectorNelderMead(
 	type Candidate = { x: number[]; value: number }
 	const candidates: Candidate[] = []
 
+	onPhase?.("Phase 1: Global Sampling")
 	// Phase 1: Global sampling using a low-discrepancy sequence
 	for (let i = 0; i < initialSamples; i++) {
 		const u = sampler.next()
@@ -122,20 +129,57 @@ export async function optimizeVectorNelderMead(
 	// Phase 2: Local refinement using Nelder-Mead starting from the best candidates
 	for (let i = 0; i < seeds.length; i++) {
 		const seed = seeds[i]
+		let currentX = [...seed.x]
+		let currentFX = seed.value
 
-		const result = nelderMead(
-			x => {
-				const projected = pointwiseClamp(x, min, max)
-				return evaluate(projected) ?? Infinity
-			},
-			seed.x,
-			{ maxIterations, tolerance }
-		)
+		// For d ≈ 10, Nelder-Mead often needs multiple attempts with perturbations to find the global minimum.
+		// We perform several restarts for each top candidate to explore the local landscape.
+		const restartsPerSeed = 3
+		for (let restart = 0; restart < restartsPerSeed; restart++) {
+			onPhase?.(
+				`Phase 2: Nelder-Mead Refinement (Seed ${i + 1}/${seeds.length}, Restart ${restart + 1}/${restartsPerSeed})`
+			)
+			const result = nelderMead(
+				x => {
+					const projected = pointwiseClamp(x, min, max)
+					const val = evaluate(projected) ?? 1e10
 
-		if (result.fx < bestValue) {
-			bestValue = result.fx
-			bestX = pointwiseClamp(result.x, min, max)
-			onNewBest?.(bestX, result.fx)
+					// Add a quadratic penalty for being out of bounds to guide the optimizer back.
+					// The penalty should be large enough to discourage staying outside but not so large
+					// that it causes numerical instability or masks the function's local features.
+					let penalty = 0
+					for (let j = 0; j < dimension; j++) {
+						if (x[j] < min[j]) penalty += Math.pow(min[j] - x[j], 2)
+						else if (x[j] > max[j]) penalty += Math.pow(x[j] - max[j], 2)
+					}
+					return val + penalty * 1e4
+				},
+				currentX,
+				{ maxIterations, tolerance }
+			)
+
+			const projectedX = pointwiseClamp(result.x, min, max)
+			const actualValue = evaluate(projectedX) ?? Infinity
+
+			// Only update the global best if the actual (unpenalized) value is better.
+			if (actualValue < bestValue) {
+				bestValue = actualValue
+				bestX = [...projectedX]
+				onNewBest?.(bestX, actualValue)
+			}
+
+			// Update the current point for the next restart if we found an improvement.
+			if (actualValue < currentFX) {
+				currentFX = actualValue
+				currentX = [...projectedX]
+			}
+
+			// Perturb the best point for the next restart to create a fresh simplex.
+			// We use a 5% perturbation to help escape local stagnation.
+			currentX = currentX.map((v, j) => {
+				const range = max[j] - min[j]
+				return clamp(v + (Math.random() - 0.5) * range * 0.05, min[j], max[j])
+			})
 		}
 
 		onProgress?.(0.7 + 0.3 * ((i + 1) / seeds.length))
@@ -178,7 +222,7 @@ export async function optimizeVectorCMAES(
 		populationSize
 	} = params
 
-	const { onProgress, onNewBest } = callbacks
+	const { onProgress, onNewBest, onPhase } = callbacks
 
 	if (min.length !== dimension || max.length !== dimension) {
 		throw new Error("min/max bounds must match dimension")
@@ -195,6 +239,7 @@ export async function optimizeVectorCMAES(
 
 	const project = (x: number[]) => pointwiseClamp(x, min, max)
 
+	onPhase?.("Phase 1: Global Sampling")
 	// Phase 1: Global sampling to find a good starting point
 	const sampler = new LowDiscrepancySequence(dimension)
 
@@ -230,52 +275,175 @@ export async function optimizeVectorCMAES(
 	}
 
 	candidates.sort((a, b) => a.value - b.value)
-	const seed = candidates.slice(0, topK)[0].x
+	const seeds = candidates.slice(0, topK)
 
-	// Phase 2: CMA-ES evolution
-	const lambda = populationSize ?? 4 + Math.floor(3 * Math.log(dimension))
-	const mu = Math.floor(lambda / 2)
+	// Phase 2: CMA-ES evolution (Multi-start)
+	for (let s = 0; s < seeds.length; s++) {
+		const seed = seeds[s].x
+		const lambda = populationSize ?? 4 + Math.floor(3 * Math.log(dimension))
+		const mu = Math.floor(lambda / 2)
 
-	const weights = Array.from({ length: mu }, (_, i) => Math.log(mu + 0.5) - Math.log(i + 1))
-	const weightSum = weights.reduce((a, b) => a + b, 0)
-	for (let i = 0; i < weights.length; i++) weights[i] /= weightSum
-
-	let mean = [...seed]
-	let stepSize = sigma
-
-	for (let gen = 0; gen < generations; gen++) {
-		const population: number[][] = []
-		const fitness: number[] = []
-
-		for (let k = 0; k < lambda; k++) {
-			const x = mean.map(m => m + stepSize * randn())
-			const projected = project(x)
-			const value = evaluate(projected) ?? Infinity
-
-			population.push(projected)
-			fitness.push(value)
-
-			if (value < bestValue) {
-				bestValue = value
-				bestX = projected
-				onNewBest?.(projected, value)
-			}
+		// Precompute weights for Active CMA-ES
+		// Positive weights for the top mu individuals, negative for the bottom.
+		const weights = new Array(lambda)
+		let positiveWeightSum = 0
+		for (let i = 0; i < lambda; i++) {
+			weights[i] = Math.log((lambda + 1) / 2) - Math.log(i + 1)
+			if (weights[i] > 0) positiveWeightSum += weights[i]
 		}
+		// Normalize positive weights
+		for (let i = 0; i < mu; i++) weights[i] /= positiveWeightSum
 
-		const order = fitness.map((f, i) => ({ f, i })).sort((a, b) => a.f - b.f)
+		const mueff = 1 / weights.slice(0, mu).reduce((sum, w) => sum + w * w, 0)
 
-		const newMean = Array(dimension).fill(0)
-		for (let i = 0; i < mu; i++) {
-			const x = population[order[i].i]
+		// Evolution paths and adaptation parameters
+		const csigma = (mueff + 2) / (dimension + mueff + 3)
+		const dsigma = 1 + 2 * Math.max(0, Math.sqrt((mueff - 1) / (dimension + 1)) - 1) + csigma
+		const cc = 4 / (dimension + 4)
+		const c1 = 2 / (Math.pow(dimension + 1.3, 2) + mueff)
+		const cmu = Math.min(
+			1 - c1,
+			(2 * (mueff - 2 + 1 / mueff)) / (Math.pow(dimension + 2, 2) + mueff)
+		)
+
+		// Scale negative weights to ensure stability
+		const negativeWeightSum = weights.slice(mu).reduce((sum, w) => sum + Math.abs(w), 0)
+		const alphaMu = 1 + c1 / cmu
+		const alphaMueff = 1 + (2 * mueff) / (mueff + 2)
+		const alphaPosDef = (1 - c1 - cmu) / (dimension * cmu)
+		const scaleNeg = Math.min(alphaMu, alphaMueff, alphaPosDef) / negativeWeightSum
+		for (let i = mu; i < lambda; i++) weights[i] *= scaleNeg
+
+		let mean = [...seed]
+		let stepSize = sigma
+
+		const ps = new Array(dimension).fill(0)
+		const pc = new Array(dimension).fill(0)
+
+		// Covariance matrix (diagonal approximation for stability in JS)
+		const diagC = new Array(dimension).fill(1)
+
+		let bestValueInSeed = seeds[s].value
+		let stagnationCount = 0
+
+		for (let gen = 0; gen < generations; gen++) {
+			if (gen % 20 === 0) {
+				onPhase?.(
+					`Phase 2: CMA-ES Evolution (Seed ${s + 1}/${seeds.length}, Gen ${gen + 1}/${generations})`
+				)
+			}
+			const population: { x: number[]; z: number[]; value: number }[] = []
+
+			for (let k = 0; k < lambda; k++) {
+				const z = Array.from({ length: dimension }, randn)
+				const x = mean.map((m, j) => m + stepSize * Math.sqrt(diagC[j]) * z[j])
+				const projected = project(x)
+
+				const actualValue = evaluate(projected) ?? Infinity
+				let value = actualValue
+
+				// Boundary handling: Add a quadratic penalty for points outside the feasible region.
+				if (value !== Infinity) {
+					let penalty = 0
+					for (let j = 0; j < dimension; j++) {
+						if (x[j] < min[j]) penalty += Math.pow(x[j] - min[j], 2)
+						else if (x[j] > max[j]) penalty += Math.pow(x[j] - max[j], 2)
+					}
+					if (penalty > 0) {
+						value += penalty * 1e6
+					}
+				}
+
+				population.push({ x: projected, z, value })
+
+				// Only update the global best with the actual (unpenalized) value
+				if (actualValue < bestValue) {
+					bestValue = actualValue
+					bestX = projected
+					onNewBest?.(projected, actualValue)
+				}
+			}
+
+			// Sort by fitness
+			population.sort((a, b) => a.value - b.value)
+
+			// Check for stagnation
+			if (population[0].value < bestValueInSeed - 1e-9) {
+				bestValueInSeed = population[0].value
+				stagnationCount = 0
+			} else {
+				stagnationCount++
+			}
+
+			// Early stopping: if no improvement for 100 generations or step size is tiny
+			if (stagnationCount > 100 || stepSize < 1e-10) {
+				break
+			}
+
+			// Update mean
+			const oldMean = [...mean]
+			const newMean = new Array(dimension).fill(0)
+			const avgZ = new Array(dimension).fill(0)
+
+			for (let i = 0; i < mu; i++) {
+				const p = population[i]
+				for (let j = 0; j < dimension; j++) {
+					newMean[j] += weights[i] * p.x[j]
+					avgZ[j] += weights[i] * p.z[j]
+				}
+			}
+			mean = newMean
+
+			// Cumulative Step-size Adaptation (CSA)
 			for (let j = 0; j < dimension; j++) {
-				newMean[j] += weights[i] * x[j]
+				ps[j] = (1 - csigma) * ps[j] + Math.sqrt(csigma * (2 - csigma) * mueff) * avgZ[j]
+			}
+
+			const psNorm = Math.sqrt(ps.reduce((sum, val) => sum + val * val, 0))
+			const expectedZ =
+				Math.sqrt(dimension) * (1 - 1 / (4 * dimension) + 1 / (21 * dimension * dimension))
+			stepSize *= Math.exp((csigma / dsigma) * (psNorm / expectedZ - 1))
+
+			// Update pc and diagonal C
+			const hsig =
+				psNorm / Math.sqrt(1 - Math.pow(1 - csigma, 2 * (gen + 1))) <
+				(1.4 + 2 / (dimension + 1)) * expectedZ
+					? 1
+					: 0
+
+			for (let j = 0; j < dimension; j++) {
+				const avgD = (mean[j] - oldMean[j]) / stepSize
+				pc[j] = (1 - cc) * pc[j] + hsig * Math.sqrt(cc * (2 - cc) * mueff) * avgD
+
+				// Rank-1 update
+				const rank1 = pc[j] * pc[j]
+				// Rank-mu update (Active CMA-ES: uses all individuals with positive/negative weights)
+				let rankMu = 0
+				for (let i = 0; i < lambda; i++) {
+					if (weights[i] === 0) continue
+					const d = (population[i].x[j] - oldMean[j]) / stepSize
+					// For negative weights, we use the distance from the mean but ensure it doesn't
+					// shrink the variance too aggressively.
+					const val = weights[i] >= 0 ? d * d : Math.max(0, d * d - diagC[j])
+					rankMu += weights[i] * val
+				}
+
+				diagC[j] =
+					(1 - c1 - cmu) * diagC[j] +
+					c1 * (rank1 + (1 - hsig) * cc * (2 - cc) * diagC[j]) +
+					cmu * rankMu
+			}
+
+			// Safety: prevent step size and variance from exploding or vanishing
+			stepSize = Math.max(1e-11, Math.min(stepSize, 2.0))
+			for (let j = 0; j < dimension; j++) {
+				diagC[j] = Math.max(1e-14, Math.min(diagC[j], 1e6))
+			}
+
+			if (gen % 20 === 0) {
+				onProgress?.(0.3 + 0.7 * ((s * generations + gen + 1) / (seeds.length * generations)))
 			}
 		}
-
-		mean = newMean
-		stepSize *= 0.99 // mild decay
-
-		onProgress?.(0.3 + 0.7 * ((gen + 1) / generations))
 	}
 
 	if (!bestX) {

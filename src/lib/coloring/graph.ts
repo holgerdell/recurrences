@@ -50,10 +50,14 @@ export interface GraphEdge {
 export class Graph {
 	/** The list of nodes in the graph, sorted by role and ID. */
 	nodes: readonly GraphNode[]
+
 	/** The list of edges in the graph, normalized so from <= to. */
 	edges: readonly GraphEdge[]
+
 	/** Adjacency list mapping node IDs to sets of neighbor IDs. */
+
 	neighbors: Readonly<Record<NodeId, Readonly<Set<NodeId>>>>
+
 	/** Mapping from node ID to the node object. */
 	nodeById: Readonly<Record<NodeId, GraphNode>>
 
