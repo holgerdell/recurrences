@@ -548,7 +548,6 @@
 														onmouseleave={() => (hoveredGraph = null)}>
 														<div>{describeAssignments(branch.assignments)}</div>
 														<div class="text-gray-400">|</div>
-														<!-- svelte-ignore a11y_no_static_element_interactions -->
 														<div>
 															<BasicSubscripts
 																raw={buildRecurrenceStrings([details.featuresDelta], true)} />
