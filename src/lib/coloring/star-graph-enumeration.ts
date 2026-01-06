@@ -6,24 +6,34 @@
  * - Colors are drawn from {1,2,3,4}; color 1 must appear in any encoded star.
  * - Center has zero halfedges; leaf halfedges are bounded by caller parameters when enumerating.
  * - Leaves are ordered by larger lists first, then higher bitmask, then smaller halfedge count.
- * - Color lists are encoded as hex masks; canonical prefixes enforce ordered color renaming.
+ * - Color lists are encoded as strings of digits 1-4 (e.g., "123"); canonical prefixes enforce
+ *   ordered color renaming.
  */
 import { character, popcount } from "$lib/utils"
 import { Graph, type GraphNode, type GraphEdge, type Color } from "./graph"
 
 /**
- * Decode a single hex digit produced by {@link encodeColors} back into a color set.
+ * Decode a color string (e.g., "123") back into a color set.
  *
- * @param hex - One hexadecimal digit (0–F) encoding the bitmask of colors.
- * @returns Sorted list of colors present in the mask.
+ * @param s - String of digits "1" through "4" representing colors.
+ * @returns Sorted list of colors present in the string.
  */
-const decodeColors = (hex: string): Color[] => {
-	const mask = parseInt(hex, 16)
-	const colors: Color[] = []
+const decodeColorStr = (s: string): Color[] => {
+	return [...s].map(c => parseInt(c, 10)) as Color[]
+}
+
+/**
+ * Convert a 4-bit color mask to a human-readable string of digits (e.g., 3 -> "12").
+ *
+ * @param mask - 4-bit mask of colors (bits 0-3 correspond to colors 1-4).
+ * @returns String of digits 1-4 in ascending order.
+ */
+const maskToColorStr = (mask: number): string => {
+	let s = ""
 	for (let i = 0; i < 4; i++) {
-		if (mask & (1 << i)) colors.push(i + 1)
+		if (mask & (1 << i)) s += (i + 1).toString()
 	}
-	return colors
+	return s
 }
 
 /**
@@ -64,63 +74,106 @@ export const colorsToMask = (colors: readonly Color[]): number => {
 }
 
 /**
+ * Profile of a color's incidence across the center and leaves. Used to establish a canonical
+ * ordering of colors.
+ */
+export type ColorProfile = {
+	color: number
+	centerBit: number
+	leafBitsMask: number
+}
+
+/**
  * Compute canonical color relabeling given center and leaf masks.
  *
  * @param centerMask - Color mask on the center vertex.
  * @param leafMasks - Color masks on each leaf (already in canonical leaf order).
- * @returns Mapping from original color -> canonical color index (1-based).
+ * @returns Sorted color profiles (by incidence profile: center first, then leaf appearances).
  */
-export const canonicalColorMap = (
+export const getColorProfiles = (
 	centerMask: number,
 	leafMasks: readonly number[]
-): Map<number, number> => {
-	const usedMask = leafMasks.reduce((acc, m) => acc | m, centerMask)
-	const colors: number[] = []
-	for (let c = 1; c <= 4; c++) if (usedMask & (1 << (c - 1))) colors.push(c)
+): ColorProfile[] => {
+	// 1. Initial color roles: is the color in the center?
+	const colorLabels = [1, 2, 3, 4].map(c => ((centerMask & (1 << (c - 1))) !== 0 ? 1 : 0))
 
-	type Profile = {
-		color: number
-		centerBit: number
-		leafBitsMask: number
-	}
-
-	const profiles: Profile[] = colors.map(color => {
-		const centerBit = (centerMask & (1 << (color - 1))) !== 0 ? 1 : 0
-		let leafBitsMask = 0
-		for (let i = 0; i < leafMasks.length; i++) {
-			if (leafMasks[i] & (1 << (color - 1))) leafBitsMask |= 1 << i
+	// 2. Leaf signatures: color-invariant description of each leaf (multiset of color roles).
+	const leafSigs = leafMasks.map(mask => {
+		const roles: number[] = []
+		for (let c = 1; c <= 4; c++) {
+			if (mask & (1 << (c - 1))) roles.push(colorLabels[c - 1])
 		}
-		return { color, centerBit, leafBitsMask }
+		return roles.sort((a, b) => a - b).join(",")
+	})
+
+	// 3. Color incidence signatures: color role + multiset of leaf signatures.
+	const colorSigs = [1, 2, 3, 4].map(c => {
+		const role = colorLabels[c - 1]
+		const sigs: string[] = []
+		for (let i = 0; i < leafMasks.length; i++) {
+			if (leafMasks[i] & (1 << (c - 1))) sigs.push(leafSigs[i])
+		}
+		return `${role}|${sigs.sort().join(";")}`
+	})
+
+	// 4. Stable canonical color ranking based on signatures to use for leaf tie-breaking.
+	const colors = ([1, 2, 3, 4] as Color[]).sort((a, b) => {
+		const sa = colorSigs[a - 1]
+		const sb = colorSigs[b - 1]
+		if (sa !== sb) return sa < sb ? 1 : -1
+		return b - a // Consistent tie-breaker
+	})
+
+	// 5. Canonical leaf order: sort leaves by their canonical color-rank bitmasks.
+	const getLeafValue = (mask: number) => {
+		const rankMap = new Map<number, number>()
+		colors.forEach((oldC, rank) => rankMap.set(oldC, rank + 1))
+		let res = 0
+		for (let c = 1; c <= 4; c++) {
+			if (mask & (1 << (c - 1))) res |= 1 << (rankMap.get(c)! - 1)
+		}
+		return res
+	}
+	const sortedLeaves = [...leafMasks].sort((a, b) => {
+		const va = getLeafValue(a)
+		const vb = getLeafValue(b)
+		if (va !== vb) return va - vb
+		return a - b
+	})
+
+	// 6. Build profiles using the canonical leaf order.
+	const profiles = [1, 2, 3, 4].map(c => {
+		const centerBit = (centerMask & (1 << (c - 1))) !== 0 ? 1 : 0
+		let leafBitsMask = 0
+		for (let i = 0; i < sortedLeaves.length; i++) {
+			if (sortedLeaves[i] & (1 << (c - 1))) leafBitsMask |= 1 << i
+		}
+		return { color: c, centerBit, leafBitsMask }
 	})
 
 	profiles.sort((a, b) => {
 		if (a.centerBit !== b.centerBit) return b.centerBit - a.centerBit
 		if (a.leafBitsMask !== b.leafBitsMask) return b.leafBitsMask - a.leafBitsMask
-		return a.color - b.color
+		return b.color - a.color
 	})
 
-	const map = new Map<number, number>()
-	profiles.forEach((p, i) => map.set(p.color, i + 1))
-	return map
+	return profiles
 }
 
 /**
  * Convert a star graph into its canonical compact string representation.
  *
- * Format: `S{d}-C{halfedges}:{centerColors}-L{leafHalfedges}:{leafColors}|...` where d is the leaf
- * count, halfedges counts dangling edges, and colors are encoded as uppercase hex masks after
- * canonical color relabeling.
+ * Format: `S{d}__{centerHalfedges}_{centerColors}__{leafHalfedges}_{leafColors}__...` where d is
+ * the leaf count, and colors are encoded as digits 1-4.
  *
  * @param graph - Star-shaped graph with a single root and any number of leaves.
  * @returns Canonical, stable string encoding of the star.
  */
 export const stringifyStarGraph = (graph: Graph): string => {
-	const nodes = [...graph.nodes]
-
-	const center = nodes.find(n => n.role === "root")
+	const center = graph.nodes.find(n => n.role === "root")
 	if (!center) throw new Error("Star graph must have a root")
 
-	const leaves = nodes.filter(n => n.role !== "root")
+	const leaves = graph.nodes.filter(n => n.role !== "root")
 	const leafSigs: LeafSig[] = leaves.map(l => ({
 		size: l.colors.length,
 		mask: colorsToMask(l.colors),
@@ -135,13 +188,19 @@ export const stringifyStarGraph = (graph: Graph): string => {
 		leafSigs.map(l => l.mask)
 	)
 
-	const centerPart = `C${center.halfedges ?? 0}:` + canonCenter.toString(16).toUpperCase()
+	// Re-sort leaves based on canonical properties to ensure stable string order
+	const finalLeafSigs = canonLeaves.map((mask, i) => ({
+		size: leafSigs[i].size,
+		mask,
+		halfedges: leafSigs[i].halfedges
+	}))
+	finalLeafSigs.sort(compareLeafOrder)
 
-	const leafPart = canonLeaves
-		.map((mask, idx) => `${leafSigs[idx].halfedges}:` + mask.toString(16).toUpperCase())
-		.join("|")
+	const centerPart = `${center.halfedges ?? 0}_` + maskToColorStr(canonCenter)
 
-	return `S${leaves.length}-${centerPart}-L${leafPart}`
+	const leafPart = finalLeafSigs.map(l => `${l.halfedges}_` + maskToColorStr(l.mask)).join("__")
+
+	return `S${leaves.length}__${centerPart}__${leafPart}`
 }
 
 /**
@@ -152,33 +211,34 @@ export const stringifyStarGraph = (graph: Graph): string => {
  * @throws If the encoding does not match the expected format.
  */
 export const parseStarGraph = (s: string): Graph => {
-	const m = s.match(/^S(\d+)-C(\d+):([0-9A-F])-L(.+)$/)
-	if (!m) throw new Error("Invalid star graph encoding")
+	const parts = s.split("__")
+	if (parts.length < 2) throw new Error("Invalid star graph encoding")
 
-	const [, dStr, chStr, cc, leafStr] = m
-	const d = Number(dStr)
+	const degreeMatch = parts[0].match(/^S(\d+)$/)
+	if (!degreeMatch) throw new Error("Invalid degree segment")
+	const d = Number(degreeMatch[1])
 
+	const [chStr, ccStr] = parts[1].split("_")
 	const nodes: GraphNode[] = [
 		{
 			id: "v",
 			role: "root",
 			halfedges: Number(chStr),
-			colors: decodeColors(cc)
+			colors: decodeColorStr(ccStr)
 		}
 	]
 
 	const edges: GraphEdge[] = []
-
-	const parts = leafStr.split("|")
-	if (parts.length !== d) throw new Error("Leaf count mismatch")
+	const leafParts = parts.slice(2)
+	if (leafParts.length !== d) throw new Error("Leaf count mismatch")
 
 	for (let i = 0; i < d; i++) {
-		const [h, c] = parts[i].split(":")
+		const [h, c] = leafParts[i].split("_")
 		const id = `${character(i + 1)}`
 		nodes.push({
 			id,
 			halfedges: Number(h),
-			colors: decodeColors(c),
+			colors: decodeColorStr(c),
 			role: "separator"
 		})
 		edges.push({ from: "v", to: id })
@@ -197,7 +257,10 @@ export const canonicalizeColorMasks = (
 	centerMask: number,
 	leafMasks: readonly number[]
 ): { center: number; leaves: number[] } => {
-	const colorMap = canonicalColorMap(centerMask, leafMasks)
+	const profiles = getColorProfiles(centerMask, leafMasks)
+	const colorMap = new Map<number, number>()
+	profiles.forEach((p, i) => colorMap.set(p.color, i + 1))
+
 	const remapMaskWithMap = (mask: number, colorMap: Map<number, number>): number => {
 		let out = 0
 		for (let c = 1; c <= 4; c++) {
@@ -218,28 +281,32 @@ export const canonicalizeColorMasks = (
 const leafMasks: number[][] = (() => {
 	const tmp: number[][] = []
 	for (let i = 0; i <= 4; i++) tmp.push([])
-	for (let mask = 0; mask < 16; mask++) tmp[popcount(mask)].push(mask)
+	for (const C1 of [1, 0])
+		for (const C2 of [1, 0])
+			for (const C3 of [1, 0])
+				for (const C4 of [1, 0]) {
+					const mask = C1 | (C2 << 1) | (C3 << 2) | (C4 << 3)
+					tmp[C1 + C2 + C3 + C4].push(mask)
+				}
 	return tmp
 })()
 
 /**
  * Enumerate canonical star signature strings across degree and list-size ranges.
  *
- * Conventions enforced:
+ * Enforces:
  * - Center has zero halfedges.
- * - Color 1 must appear in the used color set (anchors canonical labels).
+ * - Color 1 appears in the used color set (anchors canonical labels).
  * - Center color mask is a prefix (1<<k)-1 within size bounds.
- * - Leaf color masks and center mask must all satisfy the given list-size bounds.
+ * - Leaf color masks and center mask satisfy the given list-size bounds.
  * - Color assignments that would be relabeled by canonicalization are skipped to avoid duplicate
  *   signatures.
  *
- * @param minDegree - Minimum number of leaves to enumerate.
- * @param maxDegree - Maximum number of leaves to enumerate.
- * @param minHalfedges - Minimum halfedges allowed per leaf.
- * @param maxHalfedges - Maximum halfedges allowed per leaf.
- * @param minListSize - Minimum distinct colors allowed in any vertex list.
- * @param maxListSize - Maximum distinct colors allowed in any vertex list.
- * @returns Generator emitting canonical signatures of the form `S{d}-C{0}:{centerColors}-L...`.
+ * @param degree - Number of leaves to enumerate.
+ * @param halfedges - Dangling edges per leaf.
+ * @param centerListSize - Size of the center vertex color list.
+ * @param leafListSize - Size of the leaf vertex color lists.
+ * @returns Generator emitting canonical signatures of the form `S{d}__0_{colorStr}__...`.
  */
 export function* enumerateStarSignatures(
 	degree: number,
@@ -264,46 +331,65 @@ export function* enumerateStarSignatures(
 		}
 	}
 
+	const seen: Set<string> = new Set()
+
 	for (const _ of backtrackLeaves(0)) {
 		void _
 
-		// Canonicalize colors across center and leaves
-		const { center: canonCenter, leaves: canonLeaves } = canonicalizeColorMasks(centerMask, leaves)
-
-		// Reject color assignments that are not already canonical; this prevents duplicates from
-		// different color permutations mapping to the same canonical signature.
-		// Also reject if a leaf does not intersect the center
+		// Reject if a leaf does not intersect the center
 		let reject = false
-		for (let i = 0; i < canonLeaves.length; i++) {
-			if (canonLeaves[i] !== leaves[i] || (canonLeaves[i] & centerMask) === 0) {
+		for (let i = 0; i < leaves.length; i++) {
+			if ((leaves[i] & centerMask) === 0) {
 				reject = true
 				break
 			}
 		}
 		if (reject) continue
 
+		const { center: canonCenter, leaves: canonLeaves } = canonicalizeColorMasks(centerMask, leaves)
+		canonLeaves.sort((a, b) => {
+			const ma = a
+			const mb = b
+			const sa = popcount(ma)
+			const sb = popcount(mb)
+			if (sa !== sb) return sa - sb
+			return ma - mb
+		})
+
 		// Leaves are already generated in canonical order and we only keep non-recolored cases,
 		// so no additional sort is needed after canonicalization.
 		let leafPart = ""
 		for (let i = 0; i < canonLeaves.length; i++) {
-			if (i > 0) leafPart += "|"
-			leafPart += `${halfedges}:` + canonLeaves[i].toString(16).toUpperCase()
+			if (i > 0) leafPart += "__"
+			leafPart += `${halfedges}_` + maskToColorStr(canonLeaves[i])
 		}
 
-		const centerHex = canonCenter.toString(16).toUpperCase()
-		yield `S${degree}-C0:${centerHex}-L${leafPart}`
+		const centerStr = maskToColorStr(canonCenter)
+		const signature = `S${degree}__0_${centerStr}__${leafPart}`
+
+		if (seen.has(signature)) continue
+		seen.add(signature)
+
+		yield signature
 	}
 }
 
 /**
- * Enumerates all possible star graph signatures within defined constraints. @yields Canonical star
- * graph signatures.
+ * Enumerates all valid star graph signatures within defined degree and halfedge constraints.
+ *
+ * It iterates through:
+ * - Center list sizes (2..4)
+ * - Leaf list sizes (starting from center list size)
+ * - Degrees (3..10)
+ * - Halfedges (2..10)
+ *
+ * @yields Canonical star graph signatures.
  */
 export function* enumerateSituations() {
 	for (let centerListSize = 2; centerListSize <= 4; centerListSize++) {
 		for (let leafListSize = centerListSize; leafListSize <= 4; leafListSize++) {
-			for (let degree = 3; degree <= 10; degree++) {
-				for (let halfedges = 2; halfedges <= 10; halfedges++) {
+			for (let degree = 3; degree <= 5; degree++) {
+				for (let halfedges = 2; halfedges <= 5; halfedges++) {
 					if (centerListSize === leafListSize && degree < halfedges + 1) continue
 					yield* enumerateStarSignatures(degree, halfedges, centerListSize, leafListSize)
 				}

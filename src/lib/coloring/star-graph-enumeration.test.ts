@@ -5,7 +5,7 @@ import {
 	colorsToMask,
 	parseStarGraph,
 	stringifyStarGraph,
-	canonicalColorMap
+	getColorProfiles
 } from "./star-graph-enumeration"
 
 type Leaf = Pick<GraphNode, "id" | "colors" | "halfedges">
@@ -94,12 +94,12 @@ describe("star graph canonization", () => {
 
 	test("enumeration includes trivial single-leaf cases", () => {
 		const signatures = Array.from(enumerateStarSignatures(1, 1, 1, 1))
-		expect(signatures).toContain("S1-C0:1-L1:1")
-		expect(signatures).not.toContain("S1-C0:1-L1:2")
-		expect(signatures).not.toContain("S1-C0:1-L1:3")
-		expect(signatures).not.toContain("S1-C0:1-L1:4")
-		expect(signatures).not.toContain("S1-C0:1-L1:0")
-		expect(signatures).not.toContain("S1-C0:1-L0:1")
+		expect(signatures).toContain("S1__0_1__1_1")
+		expect(signatures).not.toContain("S1__0_1__1_2")
+		expect(signatures).not.toContain("S1__0_1__1_12")
+		expect(signatures).not.toContain("S1__0_1__1_13")
+		expect(signatures).not.toContain("S1__0_1__1_0")
+		expect(signatures).not.toContain("S1__0_1__0_1")
 	})
 
 	test("colorsToMask encodes ordered and unordered inputs identically", () => {
@@ -115,23 +115,33 @@ describe("star graph canonization", () => {
 	})
 
 	test("parseStarGraph rejects leaf count mismatches", () => {
-		expect(() => parseStarGraph("S2-C0:1-L0:1" as string)).toThrow()
+		expect(() => parseStarGraph("S2__0_1__0_1" as string)).toThrow()
 	})
 
 	test("enumerateStarSignatures small snapshot", () => {
 		const signatures = Array.from(enumerateStarSignatures(2, 3, 3, 2))
-		expect(signatures).toContain("S2-C0:7-L3:3|3:3")
-		expect(signatures).not.toContain("S2-C0:7-L3:C|3:C")
+		expect(signatures).toContain("S2__0_123__3_12__3_12")
+		expect(signatures).not.toContain("S2__0_123__3_34__3_34")
 		expect(new Set(signatures).size).toBe(signatures.length)
 	})
 })
 
-test("canonicalColorMap remaps by incidence profile (leaf-heavy colors first)", () => {
+const remap = (map: Map<number, number>, mask: number) => {
+	let out = 0
+	for (let c = 1; c <= 4; c++) {
+		if (mask & (1 << (c - 1))) {
+			out |= 1 << (map.get(c)! - 1)
+		}
+	}
+	return out
+}
+
+test("getColorProfiles remaps by incidence profile (leaf-heavy colors first)", () => {
 	// Center colors: {1,2,3}; leaves: {2,4} and {2,3}
 	const centerMask = 0b0111
 	const leafMasks = [0b1010, 0b0110]
 
-	const map = canonicalColorMap(centerMask, leafMasks)
+	const profiles = getColorProfiles(centerMask, leafMasks)
 
 	// Incidence profiles:
 	// color 2: center=1, leaves=11  (most frequent)
@@ -139,63 +149,40 @@ test("canonicalColorMap remaps by incidence profile (leaf-heavy colors first)", 
 	// color 1: center=1, leaves=00
 	// color 4: center=0, leaves=01
 
-	expect(map).toEqual(
-		new Map([
-			[2, 1], // highest leaf incidence
-			[3, 2],
-			[1, 3],
-			[4, 4]
-		])
-	)
+	expect(profiles).toEqual([
+		{ color: 2, centerBit: 1, leafBitsMask: 3 },
+		{ color: 3, centerBit: 1, leafBitsMask: 1 },
+		{ color: 1, centerBit: 1, leafBitsMask: 0 },
+		{ color: 4, centerBit: 0, leafBitsMask: 2 }
+	])
 
-	const remap = (mask: number) => {
-		let out = 0
-		for (let c = 1; c <= 4; c++) {
-			if (mask & (1 << (c - 1))) {
-				out |= 1 << (map.get(c)! - 1)
-			}
-		}
-		return out
-	}
+	const map = new Map(profiles.map((p, i) => [p.color, i + 1]))
 
 	// Center stays canonical (0111 → 0111)
-	expect(remap(centerMask)).toBe(0b0111)
+	expect(remap(map, centerMask)).toBe(0b0111)
 
 	// Leaves remap canonically
-	expect(leafMasks.map(remap)).toEqual([
+	expect(leafMasks.map(x => remap(map, x))).toEqual([
 		0b1001, // {2,4} → {1,4}
 		0b0011 // {2,3} → {1,2}
 	])
 })
 
-test("canonicalColorMap remaps by incidence profile (leaf-heavy colors first)", () => {
-	// Center colors: {1}; leaves: {4} and {4}
-	const centerMask = 0b0001
-	const leafMasks = [0b1100, 0b1000]
+test("getColorProfiles remaps by incidence profile (leaf-heavy colors first)", () => {
+	const centerMask = 0b1100
+	const leafMasks = [0b1010, 0b1001, 0b1100]
 
-	const map = canonicalColorMap(centerMask, leafMasks)
+	const profiles = getColorProfiles(centerMask, leafMasks)
 
-	expect(map).toEqual(
-		new Map([
-			[1, 1],
-			[4, 2],
-			[3, 3]
-		])
-	)
+	expect(profiles).toEqual([
+		{ color: 4, centerBit: 1, leafBitsMask: 7 },
+		{ color: 3, centerBit: 1, leafBitsMask: 1 },
+		{ color: 1, centerBit: 0, leafBitsMask: 4 },
+		{ color: 2, centerBit: 0, leafBitsMask: 2 }
+	])
 
-	const remap = (mask: number) => {
-		let out = 0
-		for (let c = 1; c <= 4; c++) {
-			if (mask & (1 << (c - 1))) {
-				out |= 1 << (map.get(c)! - 1)
-			}
-		}
-		return out
-	}
+	const map = new Map(profiles.map((p, i) => [p.color, i + 1]))
 
-	// Center stays canonical (0111 → 0111)
-	expect(remap(centerMask)).toBe(0b0001)
-
-	// Leaves remap canonically
-	expect(leafMasks.map(remap)).toEqual([0b0110, 0b0010])
+	expect(remap(map, centerMask)).toBe(0b0011)
+	expect(leafMasks.map(x => remap(map, x))).toEqual([0b1001, 0b0101, 0b0011])
 })
