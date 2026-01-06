@@ -388,8 +388,8 @@ export function* enumerateStarSignatures(
 export function* enumerateSituations() {
 	for (let centerListSize = 2; centerListSize <= 4; centerListSize++) {
 		for (let leafListSize = centerListSize; leafListSize <= 4; leafListSize++) {
-			for (let degree = 3; degree <= 5; degree++) {
-				for (let halfedges = 2; halfedges <= 5; halfedges++) {
+			for (let degree = 3; degree <= 6; degree++) {
+				for (let halfedges = 2; halfedges <= 6; halfedges++) {
 					if (centerListSize === leafListSize && degree < halfedges + 1) continue
 					yield* enumerateStarSignatures(degree, halfedges, centerListSize, leafListSize)
 				}

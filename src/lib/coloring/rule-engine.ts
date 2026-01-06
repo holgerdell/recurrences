@@ -196,7 +196,16 @@ function applyIndependentSetBranch(rule: BranchingRule, branch: Branch): Graph {
 		}
 	}
 
-	return new Graph(nodes, Array.from(rule.before.edges))
+	// Filter out edges incident to nodes with a singleton color set.
+	const finalEdges = Array.from(rule.before.edges).filter(edge => {
+		const u = nodeMap.get(edge.from)
+		const v = nodeMap.get(edge.to)
+		if (!u || !v) return false
+		if (u.colors.length === 1 || v.colors.length === 1) return false
+		return true
+	})
+
+	return new Graph(nodes, finalEdges)
 }
 
 /**
