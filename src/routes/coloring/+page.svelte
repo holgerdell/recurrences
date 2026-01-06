@@ -168,6 +168,10 @@
 	let userWeights = $state(createFeatureVector(1))
 	let isWeightSearchRunning = $state(false)
 	let weightSearchProgress = $state({ mode: "", phase: "", percent: 0 })
+
+	let hoveredGraph = $state<Graph | null>(null)
+	let tooltipPosition = $state({ x: 0, y: 0 })
+
 	let lastBestWeights = $state<FeatureVector | null>(null)
 	let lastBestBase = $state<number | null>(null)
 	let currentSearchBounds = $state<null | {
@@ -276,6 +280,11 @@
 		currentSearchBounds = null
 	})
 </script>
+
+<svelte:window
+	onmousemove={e => {
+		tooltipPosition = { x: e.clientX, y: e.clientY }
+	}} />
 
 <div class="mx-auto max-w-6xl space-y-12 sm:p-8">
 	<h1 class="text-3xl font-bold">Branching Rules for List 3‑Coloring</h1>
@@ -529,15 +538,22 @@
 										class="space-y-2 rounded border border-dashed bg-white p-3 text-sm text-gray-800">
 										<span class="font-semibold tracking-wide uppercase">Rule {rule.ruleId}:</span>
 										<div class="flex flex-wrap items-baseline gap-2 text-sm">
-											<div class="grid grid-cols-[auto_auto_1fr] gap-2">
+											<div class="space-y-2">
 												{#each rule.branches as branch, idx (branch.assignments)}
-													<div>{describeAssignments(branch.assignments)}</div>
-													<div class="text-gray-400">|</div>
-													<BasicSubscripts
-														raw={buildRecurrenceStrings(
-															[rule.branchDetails[idx].featuresDelta],
-															true
-														)} />
+													{@const details = rule.branchDetails[idx]}
+													<!-- svelte-ignore a11y_no_static_element_interactions -->
+													<div
+														class="flex gap-2 hover:bg-red-100"
+														onmouseenter={() => (hoveredGraph = details.after)}
+														onmouseleave={() => (hoveredGraph = null)}>
+														<div>{describeAssignments(branch.assignments)}</div>
+														<div class="text-gray-400">|</div>
+														<!-- svelte-ignore a11y_no_static_element_interactions -->
+														<div>
+															<BasicSubscripts
+																raw={buildRecurrenceStrings([details.featuresDelta], true)} />
+														</div>
+													</div>
 												{/each}
 											</div>
 										</div>
@@ -585,3 +601,12 @@
 		</pre> -->
 	</section>
 </div>
+
+{#if hoveredGraph}
+	<div
+		class="fixed z-50 rounded-lg border border-gray-200 bg-white p-2 shadow-xl"
+		style="top: {tooltipPosition.y + 16}px; left: {tooltipPosition.x + 16}px;">
+		<div class="mb-1 text-xs font-semibold text-gray-500">Resulting Graph</div>
+		<GraphView graph={hoveredGraph} scale={0.7} />
+	</div>
+{/if}
