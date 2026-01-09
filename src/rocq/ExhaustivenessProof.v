@@ -1,4 +1,4 @@
-From Coq Require Import List Bool Arith.
+From Coq Require Import List Bool Arith Sorting.Permutation.
 
 Import ListNotations.
 Open Scope nat_scope.
@@ -9,12 +9,15 @@ Open Scope nat_scope.
   =========================================
 *)
 
-Inductive Color := C1 | C2 | C3 | C4.
+Inductive Color := C1 | C2 | C3.
 Scheme Equality for Color.
 
 Definition Domain := list Color.
 Definition Domain_eq_dec := list_eq_dec Color_eq_dec.
 Definition Domain_beq d1 d2 := if Domain_eq_dec d1 d2 then true else false.
+
+Definition intersect (d1 d2 : Domain) : Domain :=
+  filter (fun c => if in_dec Color_eq_dec c d2 then true else false) d1.
 
 (*
   Domain well-formedness:
@@ -44,6 +47,21 @@ Record LocalSituation := {
   neighbors : list NeighborInfo
 }.
 
+(*)
+  =========================================
+  Additional structural constraints
+  =========================================
+*)
+
+Definition reducible_situation (l : LocalSituation) : Prop :=
+  length l.(root_domain) = 2 /\
+  exists n1 n2,
+    In n1 l.(neighbors) /\
+    In n2 l.(neighbors) /\
+    n1 <> n2 /\
+    n1.(domain) = l.(root_domain) /\
+    n1.(domain) = n2.(domain).
+
 (*
   =========================================
   Local invariants
@@ -52,39 +70,107 @@ Record LocalSituation := {
 
 Definition valid_neighbor (n : NeighborInfo) : Prop :=
   valid_domain n.(domain) /\
-  n.(half_edges) > 0.
+  n.(half_edges) >= 2.
 
-Definition valid_local (l : LocalSituation) : Prop :=
-  valid_domain l.(root_domain) /\
-  Forall valid_neighbor l.(neighbors).
-
-(*
+(*)
   =========================================
-  Named local cases
+  Node features and priority
   =========================================
 *)
 
-Inductive LocalCase :=
-| CaseExample
-| CaseA
-| CaseB.
+Inductive NodeRef :=
+| Root (l : LocalSituation)
+| Neighbor (n : NeighborInfo).
 
-Definition count_n (l : LocalSituation) (d : Domain) (e : nat) : nat :=
-  count_occ NeighborInfo_eq_dec l.(neighbors) {| domain := d; half_edges := e |}.
+Definition list_size (r : NodeRef) : nat :=
+  match r with
+  | Root l => length l.(root_domain)
+  | Neighbor n => length n.(domain)
+  end.
 
-Definition case_exampleb (l : LocalSituation) : bool :=
-  Domain_beq l.(root_domain) [C1; C2] &&
-  (count_n l [C1; C2] 2 =? 1) &&
-  (count_n l [C1; C3] 2 =? 3).
+Definition degree (r : NodeRef) : nat :=
+  match r with
+  | Root l => length l.(neighbors)
+  | Neighbor n => n.(half_edges) + 1
+  end.
 
-Definition case_Ab (l : LocalSituation) : bool := false.
-Definition case_Bb (l : LocalSituation) : bool := false.
+(*
+  priority n1 n2 means: n1 has higher priority than n2.
+  We prioritize smaller list_size first; if list_size ties, we prioritize larger degree.
+*)
+Definition priority (n1 n2 : NodeRef) : Prop :=
+  list_size n1 < list_size n2 \/
+  (list_size n1 = list_size n2 /\ degree n1 > degree n2).
 
-Definition classify (l : LocalSituation) : option LocalCase :=
-  if case_exampleb l then Some CaseExample
-  else if case_Ab l then Some CaseA
-  else if case_Bb l then Some CaseB
-  else None.
+Definition valid_situation (l : LocalSituation) : Prop :=
+  valid_domain l.(root_domain) /\
+  ~ reducible_situation l /\
+  (forall n,
+    In n l.(neighbors) ->
+    valid_domain n.(domain) /\
+    intersect l.(root_domain) n.(domain) <> [] /\
+    ~ priority (Neighbor n) (Root l)).
+
+(*
+  =========================================
+  Concrete local situations
+  =========================================
+*)
+
+(* A few example situations (not meant to be exhaustive yet). *)
+
+Definition n_full_2 : NeighborInfo :=
+  {| domain := [C1; C2; C3]; half_edges := 2 |}.
+
+Definition n_12_2 : NeighborInfo :=
+  {| domain := [C1; C2]; half_edges := 2 |}.
+
+Definition example_star_deg3 : LocalSituation :=
+  {| root_domain := [C1; C2; C3];
+     neighbors := [n_full_2; n_full_2; n_full_2] |}.
+
+Definition example_star_deg4 : LocalSituation :=
+  {| root_domain := [C1; C2; C3];
+     neighbors := [n_full_2; n_full_2; n_full_2; n_full_2] |}.
+
+Definition example_root12_mixed : LocalSituation :=
+  {| root_domain := [C1; C2];
+     neighbors := [n_full_2; n_12_2; n_full_2] |}.
+
+Definition concrete_situations : list LocalSituation :=
+  [example_star_deg3; example_star_deg4; example_root12_mixed].
+
+(*
+  =========================================
+  Isomorphism of local situations
+  =========================================
+
+  We consider two situations isomorphic if one can be obtained from the other by:
+  - permuting the color universe (a bijection Color -> Color), and
+  - arbitrarily reordering the neighbor list.
+*)
+
+Record ColorPerm := {
+  perm : Color -> Color;
+  inv : Color -> Color;
+  perm_left_inv : forall c, inv (perm c) = c;
+  perm_right_inv : forall c, perm (inv c) = c
+}.
+
+Definition perm_domain (p : Color -> Color) (d : Domain) : Domain :=
+  map p d.
+
+Definition perm_neighbor (p : Color -> Color) (n : NeighborInfo) : NeighborInfo :=
+  {| domain := perm_domain p n.(domain); half_edges := n.(half_edges) |}.
+
+Definition neighbor_iso (p : Color -> Color) (n1 n2 : NeighborInfo) : Prop :=
+  n2.(half_edges) = n1.(half_edges) /\
+  Permutation n2.(domain) (perm_domain p n1.(domain)).
+
+Definition situations_are_isomorphic (l1 l2 : LocalSituation) : Prop :=
+  exists p : ColorPerm,
+    Permutation l2.(root_domain) (perm_domain p.(perm) l1.(root_domain)) /\
+    PermutationA (neighbor_iso p.(perm)) l1.(neighbors) l2.(neighbors).
 
 (*
   =========================================
@@ -92,10 +178,12 @@ Definition classify (l : LocalSituation) : option LocalCase :=
   =========================================
 *)
 
-Lemma local_cases_exhaustive :
+Lemma local_situations_exhaustive :
   forall l,
-    valid_local l ->
-    exists c, classify l = Some c.
+    valid_situation l ->
+    exists l0,
+      In l0 concrete_situations /\
+      situations_are_isomorphic l l0.
 Proof.
   (*
     This is the key proof:
