@@ -5,15 +5,39 @@ pub struct Node {
     // Bitmask over colors {0,1,2,3}. Bit i set => color i is present.
     // Example: 0b0011 represents {0,1}.
     pub colors: u8,
+    /// Number of dangling halfedges at this node.
+    ///
+    /// Invariant:
+    /// - If `children` is non-empty, then `halfedges == 0`.
+    /// - If `children` is empty (leaf), then `halfedges >= 2` (and enumeration
+    ///   additionally enforces `halfedges <= degree`).
+    pub halfedges: u8,
     pub children: Vec<Node>,
 }
 
 impl Node {
-    pub fn new(colors: u8, children: Vec<Node>) -> Self {
+    pub fn new_internal(colors: u8, children: Vec<Node>) -> Self {
         debug_assert!(colors != 0, "colors must be non-empty");
         debug_assert!(colors & !0b1111 == 0, "colors must be in 0..=3");
         debug_assert!(colors.count_ones() >= 2, "colors must have size >= 2");
-        Self { colors, children }
+        debug_assert!(!children.is_empty(), "internal node must have children");
+        Self {
+            colors,
+            halfedges: 0,
+            children,
+        }
+    }
+
+    pub fn new_leaf(colors: u8, halfedges: u8) -> Self {
+        debug_assert!(colors != 0, "colors must be non-empty");
+        debug_assert!(colors & !0b1111 == 0, "colors must be in 0..=3");
+        debug_assert!(colors.count_ones() >= 2, "colors must have size >= 2");
+        debug_assert!(halfedges >= 2, "leaf must have at least 2 halfedges");
+        Self {
+            colors,
+            halfedges,
+            children: Vec::new(),
+        }
     }
 }
 
@@ -104,7 +128,11 @@ fn generate_subtrees_with_parent(
         }
 
         if depth == 0 {
-            out.push(Node::new(*colors, Vec::new()));
+            // Leaf: vary halfedges from 2..=degree.
+            // If degree < 2, there are no valid leaves.
+            for h in 2..=degree {
+                out.push(Node::new_leaf(*colors, h as u8));
+            }
             continue;
         }
 
@@ -118,7 +146,7 @@ fn generate_subtrees_with_parent(
                 .into_iter()
                 .map(|i| child_candidates[i].clone())
                 .collect::<Vec<_>>();
-            out.push(Node::new(*colors, children));
+            out.push(Node::new_internal(*colors, children));
         }
     }
 
@@ -134,6 +162,10 @@ fn generate_subtrees_with_parent(
 /// - Colors are chosen from `COLOR_SUBSETS_GE2`.
 /// - Constraint: for every parent/child edge, `parent.colors` intersects `child.colors`.
 pub fn generate_colored_uniform_trees(depth: usize, degree: usize) -> Vec<Node> {
+    if degree < 2 {
+        return Vec::new();
+    }
+
     let root_children_count = if depth == 0 { 0 } else { degree };
     if depth > 0 && root_children_count == 0 {
         return Vec::new();
@@ -149,7 +181,10 @@ pub fn generate_colored_uniform_trees(depth: usize, degree: usize) -> Vec<Node> 
         };
 
         if depth == 0 {
-            out.push(Node::new(root_colors, Vec::new()));
+            // Root is a leaf: vary halfedges from 2..=degree.
+            for h in 2..=degree {
+                out.push(Node::new_leaf(root_colors, h as u8));
+            }
             continue;
         }
 
@@ -164,7 +199,7 @@ pub fn generate_colored_uniform_trees(depth: usize, degree: usize) -> Vec<Node> 
                 .into_iter()
                 .map(|i| child_candidates[i].clone())
                 .collect::<Vec<_>>();
-            out.push(Node::new(root_colors, children));
+            out.push(Node::new_internal(root_colors, children));
         }
     }
 
@@ -174,6 +209,8 @@ pub fn generate_colored_uniform_trees(depth: usize, degree: usize) -> Vec<Node> 
 fn node_to_json(node: &Node, out: &mut String) {
     out.push_str("{\"colors\":");
     out.push_str(&node.colors.to_string());
+    out.push_str(",\"halfedges\":");
+    out.push_str(&node.halfedges.to_string());
     out.push_str(",\"children\":[");
     for (i, child) in node.children.iter().enumerate() {
         if i > 0 {
@@ -182,6 +219,40 @@ fn node_to_json(node: &Node, out: &mut String) {
         node_to_json(child, out);
     }
     out.push_str("]}");
+}
+
+fn colors_to_digits(colors: u8) -> String {
+    let mut s = String::new();
+    for c in 0..=3u8 {
+        if (colors & (1u8 << c)) != 0 {
+            s.push(char::from(b'0' + c));
+        }
+    }
+    s
+}
+
+fn star_to_string(root: &Node, degree: usize) -> Option<String> {
+    if root.children.len() != degree {
+        return None;
+    }
+    if root.children.iter().any(|c| !c.children.is_empty()) {
+        return None;
+    }
+
+    let mut s = format!("S{degree}");
+    s.push_str("__");
+    s.push_str(&root.halfedges.to_string());
+    s.push('_');
+    s.push_str(&colors_to_digits(root.colors));
+
+    for child in root.children.iter() {
+        s.push_str("__");
+        s.push_str(&child.halfedges.to_string());
+        s.push('_');
+        s.push_str(&colors_to_digits(child.colors));
+    }
+
+    Some(s)
 }
 
 fn main() {
@@ -215,6 +286,29 @@ fn main() {
     };
 
     let trees = generate_colored_uniform_trees(depth, degree);
+
+    // For stars (depth = 1), emit compact encoded strings instead of full JSON.
+    if depth == 1 {
+        let mut out = String::new();
+        out.push('[');
+        out.push('\n');
+        for (i, t) in trees.iter().enumerate() {
+            let Some(s) = star_to_string(t, degree) else {
+                continue;
+            };
+            if i > 0 {
+                out.push(',');
+                out.push('\n');
+            }
+            out.push('"');
+            out.push_str(&s);
+            out.push('"');
+        }
+        out.push(']');
+        println!("{out}");
+        return;
+    }
+
     let mut out = String::new();
     out.push('[');
     for (i, t) in trees.iter().enumerate() {
