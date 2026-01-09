@@ -100,7 +100,7 @@
 	}
 
 	let selectedColorListSize = $state<ColorListSizes>("size23")
-	let selectedPalette = $state<ColorPalette>("123")
+	let selectedPalette = $state<ColorPalette>("012")
 
 	const fixedPartialMeasure = $derived(
 		getFixedPartialMeasure(selectedPalette, selectedColorListSize)
@@ -108,15 +108,15 @@
 	const fixedPartialMeasureEntries = $derived(Object.entries(fixedPartialMeasure))
 
 	const allowedColors = $derived(
-		colorPaletteOptions.find(option => option.key === selectedPalette)?.colors ?? [1, 2, 3, 4]
+		colorPaletteOptions.find(option => option.key === selectedPalette)?.colors ?? [0, 1, 2, 3]
 	)
 	const allowedSizes = $derived(
 		colorListSizeOptions.find(option => option.key === selectedColorListSize)?.listSizes
 	)
-	const size234Disabled = $derived(selectedPalette === "123" || selectedPalette === "12")
-	const size23Disabled = $derived(selectedPalette === "12")
+	const size234Disabled = $derived(selectedPalette === "012" || selectedPalette === "01")
+	const size23Disabled = $derived(selectedPalette === "01")
 
-	const problem = $derived(selectedPalette === "12" ? "independent set" : "list coloring")
+	const problem = $derived(selectedPalette === "01" ? "independent set" : "list coloring")
 
 	const analyzedRules = $derived(
 		localSituationsStatus.loading
@@ -136,7 +136,7 @@
 	 * @returns True if the situation cannot be obviously reduced, false otherwise.
 	 */
 	function cannotReduceInstance(G: Graph): boolean {
-		if (selectedPalette === "12") {
+		if (selectedPalette === "01") {
 			return true
 		}
 		for (const u of G.nodes) {

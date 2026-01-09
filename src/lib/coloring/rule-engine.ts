@@ -69,7 +69,7 @@ export function autogenerateRules({
 		})
 	}
 
-	// one-rest split. Eg. 1,2,3 -> 1 | 2,3
+	// one-rest split. Eg. 0,1,2 -> 0 | 1,2
 	if (root.colors.length >= 3) {
 		const neighborIds = Array.from(canon.neighbors[root.id]).toSorted((a, b) => a.localeCompare(b))
 		const seenTypes = new Set<string>()
@@ -93,7 +93,7 @@ export function autogenerateRules({
 		}
 	}
 
-	// two-rest split. Eg. 1,2,3,4 -> 1,3 | 2,4
+	// two-rest split. Eg. 0,1,2,3 -> 0,2 | 1,3
 	if (root.colors.length >= 4) {
 		const seenSplits = new Set<string>()
 		for (let i = 0; i < root.colors.length; i++) {
@@ -128,7 +128,7 @@ export function autogenerateRules({
  *
  * @param id - Vertex identifier being described.
  * @param colors - Colors remaining on that vertex within the branch.
- * @returns Text such as "v = 1" or "v ∈ {1,2}".
+ * @returns Text such as "v = 0" or "v ∈ {0,1}".
  */
 function describeSingleAssignment(id: string, colors: readonly Color[]) {
 	if (colors.length === 1) return `${id} = ${colors[0]}`
@@ -150,7 +150,7 @@ export function describeAssignments(assignments: Record<string, readonly Color[]
 
 /**
  * Applies branch assignments for the independent set problem. In this case, color 1 means "in the
- * independent set" and color 2 means "not in".
+ * independent set" and color 0 means "not in the independent set".
  *
  * @param rule - Branching rule providing the baseline context.
  * @param branch - Specific branch assignments to apply.
@@ -179,7 +179,7 @@ function applyIndependentSetBranch(rule: BranchingRule, branch: Branch): Graph {
 	}
 
 	// Propagate constraints: if a node is in the independent set (color 1),
-	// all its neighbors must be out of the independent set (color 2).
+	// all its neighbors must be out of the independent set (color 0).
 	for (const node of nodes) {
 		if (node.colors.length === 1 && node.colors[0] === 1) {
 			const neighbors = rule.before.neighbors[node.id]

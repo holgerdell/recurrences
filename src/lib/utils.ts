@@ -1,7 +1,7 @@
 export function character(i: number) {
-	if (!Number.isInteger(i) || i < 1) throw new Error("index must be a positive integer")
-	if (i > 26) throw new Error("index out of range (max 26)")
-	return String.fromCharCode("a".charCodeAt(0) + (i - 1))
+	if (!Number.isInteger(i) || i < 0) throw new Error("index must be a non-negative integer")
+	if (i > 25) throw new Error("index out of range (max 25)")
+	return String.fromCharCode("a".charCodeAt(0) + i)
 }
 
 /**
@@ -54,7 +54,6 @@ export function formatNumber(x: number, digits: number = 4): string {
  * @param eps - Acceptable deviation from the nearest integer.
  * @returns Snapped value or the original when outside epsilon.
  */
-
 export function snapInt(val: number, eps = 1e-6): number {
 	if (!Number.isFinite(val)) return val
 	const i = Math.round(val)

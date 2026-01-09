@@ -21,35 +21,35 @@ describe("hasProperColoring", () => {
 	test("triangle cannot be colored with only two colors", () => {
 		const nodes: GraphNode[] = ["a", "b", "c"].map(id => ({
 			id,
-			colors: [1, 2]
+			colors: [0, 1]
 		}))
 		expect(hasProperColoring(new Graph(nodes, triangleEdges))).toBe(false)
 	})
 	test("triangle can be colored with three colors", () => {
 		const nodes: GraphNode[] = ["a", "b", "c"].map(id => ({
 			id,
-			colors: [1, 2, 3]
+			colors: [0, 1, 2]
 		}))
 		expect(hasProperColoring(new Graph(nodes, triangleEdges))).toBe(true)
 	})
 	test("K4 is not 3-colorable", () => {
 		const nodes: GraphNode[] = ["a", "b", "c", "d"].map(id => ({
 			id,
-			colors: [1, 2, 3]
+			colors: [0, 1, 2]
 		}))
 		expect(hasProperColoring(new Graph(nodes, k4Edges))).toBe(false)
 	})
 	test("K4 is 4-colorable", () => {
 		const nodes: GraphNode[] = ["a", "b", "c", "d"].map(id => ({
 			id,
-			colors: [1, 2, 3, 4]
+			colors: [0, 1, 2, 3]
 		}))
 		expect(hasProperColoring(new Graph(nodes, k4Edges))).toBe(true)
 	})
 	test("K4 minus one edge is 3-colorable", () => {
 		const nodes: GraphNode[] = ["a", "b", "c", "d"].map(id => ({
 			id,
-			colors: [1, 2, 3]
+			colors: [0, 1, 2]
 		}))
 		const edges: GraphEdge[] = [...k4Edges]
 		edges.pop()

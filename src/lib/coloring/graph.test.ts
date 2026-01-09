@@ -3,10 +3,10 @@ import { Graph, type GraphEdge, type GraphNode } from "./graph"
 
 describe("Graph", () => {
 	const nodes: GraphNode[] = [
-		{ id: "s1", colors: [1, 2], role: "separator" },
-		{ id: "r1", colors: [1], role: "root" },
-		{ id: "n1", colors: [1, 2, 3] },
-		{ id: "n2", colors: [2, 3], halfedges: 1 }
+		{ id: "s1", colors: [0, 1], role: "separator" },
+		{ id: "r1", colors: [0], role: "root" },
+		{ id: "n1", colors: [0, 1, 2] },
+		{ id: "n2", colors: [1, 2], halfedges: 1 }
 	]
 
 	const edges: GraphEdge[] = [

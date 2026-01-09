@@ -9,7 +9,7 @@ export type ColorListSizes = "size234" | "size23" | "size2"
 /**
  * Represents the available color palettes for the coloring problem.
  */
-export type ColorPalette = "1234" | "123" | "12"
+export type ColorPalette = "0123" | "012" | "01"
 
 /**
  * Represents a local situation (neighborhood) in a graph, including its canonical form.
@@ -62,22 +62,22 @@ export const colorPaletteOptions: Array<{
 	colors: readonly number[]
 }> = [
 	{
-		key: "1234",
+		key: "0123",
 		label: "List 4-Coloring",
-		description: "Color Palette = {1,2,3,4}",
-		colors: [1, 2, 3, 4]
+		description: "Color Palette = {0,1,2,3}",
+		colors: [0, 1, 2, 3]
 	},
 	{
-		key: "123",
+		key: "012",
 		label: "List 3-Coloring",
-		description: "Color Palette = {1,2,3}",
-		colors: [1, 2, 3]
+		description: "Color Palette = {0,1,2}",
+		colors: [0, 1, 2]
 	},
 	{
-		key: "12",
+		key: "01",
 		label: "Weighted Independent Set",
-		description: "Color Palette = {1,2}",
-		colors: [1, 2]
+		description: "Color Palette = {0,1}",
+		colors: [0, 1]
 	}
 ]
 
@@ -127,11 +127,11 @@ export function getFixedPartialMeasure(
 ) {
 	const result: PartialFeatureVector = {}
 	let listSizeUpTo = 4
-	if (selectedPalette === "1234") {
+	if (selectedPalette === "0123") {
 		listSizeUpTo = 4
-	} else if (selectedPalette === "123") {
+	} else if (selectedPalette === "012") {
 		listSizeUpTo = 3
-	} else if (selectedPalette === "12") {
+	} else if (selectedPalette === "01") {
 		listSizeUpTo = 2
 	}
 	if (selectedColorListSize === "size23") {

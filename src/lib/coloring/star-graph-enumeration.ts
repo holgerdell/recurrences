@@ -3,19 +3,19 @@
  * string form, enabling fast equality checks and storage of generated situations.
  *
  * Canonical conventions:
- * - Colors are drawn from {1,2,3,4}; color 1 must appear in any encoded star.
+ * - Colors are drawn from {0,1,2,3}; color 0 must appear in any encoded star.
  * - Center has zero halfedges; leaf halfedges are bounded by caller parameters when enumerating.
  * - Leaves are ordered by larger lists first, then higher bitmask, then smaller halfedge count.
- * - Color lists are encoded as strings of digits 1-4 (e.g., "123"); canonical prefixes enforce
+ * - Color lists are encoded as strings of digits 0-3 (e.g., "0123"); canonical prefixes enforce
  *   ordered color renaming.
  */
 import { character, popcount } from "$lib/utils"
 import { Graph, type GraphNode, type GraphEdge, type Color } from "./graph"
 
 /**
- * Decode a color string (e.g., "123") back into a color set.
+ * Decode a color string (e.g., "0123") back into a color set.
  *
- * @param s - String of digits "1" through "4" representing colors.
+ * @param s - String of digits "0" through "3" representing colors.
  * @returns Sorted list of colors present in the string.
  */
 const decodeColorStr = (s: string): Color[] => {
@@ -25,13 +25,13 @@ const decodeColorStr = (s: string): Color[] => {
 /**
  * Convert a 4-bit color mask to a human-readable string of digits (e.g., 3 -> "12").
  *
- * @param mask - 4-bit mask of colors (bits 0-3 correspond to colors 1-4).
- * @returns String of digits 1-4 in ascending order.
+ * @param mask - 4-bit mask of colors (bits 0-3 correspond to colors 0-3).
+ * @returns String of digits 0-3 in ascending order.
  */
 const maskToColorStr = (mask: number): string => {
 	let s = ""
 	for (let i = 0; i < 4; i++) {
-		if (mask & (1 << i)) s += (i + 1).toString()
+		if (mask & (1 << i)) s += i.toString()
 	}
 	return s
 }
@@ -58,17 +58,17 @@ const compareLeafOrder = (a: LeafSig, b: LeafSig): number => {
 }
 
 /**
- * Convert a list of colors in {1,2,3,4} to its 4-bit mask representation.
+ * Convert a list of colors in {0,1,2,3} to its 4-bit mask representation.
  *
  * @param colors - Colors to encode.
- * @returns 4-bit mask with bit (c-1) set for each color c.
- * @throws If a color lies outside the range 1..4.
+ * @returns 4-bit mask with bit c set for each color c.
+ * @throws If a color lies outside the range 0..3.
  */
 export const colorsToMask = (colors: readonly Color[]): number => {
 	let mask = 0
 	for (const c of colors) {
-		if (c < 1 || c > 4) throw new Error("Color out of range")
-		mask |= 1 << (c - 1)
+		if (c < 0 || c > 3) throw new Error("Color out of range")
+		mask |= 1 << c
 	}
 	return mask
 }
@@ -95,31 +95,31 @@ export const getColorProfiles = (
 	leafMasks: readonly number[]
 ): ColorProfile[] => {
 	// 1. Initial color roles: is the color in the center?
-	const colorLabels = [1, 2, 3, 4].map(c => ((centerMask & (1 << (c - 1))) !== 0 ? 1 : 0))
+	const colorLabels = [0, 1, 2, 3].map(c => ((centerMask & (1 << c)) !== 0 ? 1 : 0))
 
 	// 2. Leaf signatures: color-invariant description of each leaf (multiset of color roles).
 	const leafSigs = leafMasks.map(mask => {
 		const roles: number[] = []
-		for (let c = 1; c <= 4; c++) {
-			if (mask & (1 << (c - 1))) roles.push(colorLabels[c - 1])
+		for (let c = 0; c < 4; c++) {
+			if (mask & (1 << c)) roles.push(colorLabels[c])
 		}
 		return roles.sort((a, b) => a - b).join(",")
 	})
 
 	// 3. Color incidence signatures: color role + multiset of leaf signatures.
-	const colorSigs = [1, 2, 3, 4].map(c => {
-		const role = colorLabels[c - 1]
+	const colorSigs = [0, 1, 2, 3].map(c => {
+		const role = colorLabels[c]
 		const sigs: string[] = []
 		for (let i = 0; i < leafMasks.length; i++) {
-			if (leafMasks[i] & (1 << (c - 1))) sigs.push(leafSigs[i])
+			if (leafMasks[i] & (1 << c)) sigs.push(leafSigs[i])
 		}
 		return `${role}|${sigs.sort().join(";")}`
 	})
 
 	// 4. Stable canonical color ranking based on signatures to use for leaf tie-breaking.
-	const colors = ([1, 2, 3, 4] as Color[]).sort((a, b) => {
-		const sa = colorSigs[a - 1]
-		const sb = colorSigs[b - 1]
+	const colors = ([0, 1, 2, 3] as Color[]).sort((a, b) => {
+		const sa = colorSigs[a]
+		const sb = colorSigs[b]
 		if (sa !== sb) return sa < sb ? 1 : -1
 		return b - a // Consistent tie-breaker
 	})
@@ -129,8 +129,8 @@ export const getColorProfiles = (
 		const rankMap = new Map<number, number>()
 		colors.forEach((oldC, rank) => rankMap.set(oldC, rank + 1))
 		let res = 0
-		for (let c = 1; c <= 4; c++) {
-			if (mask & (1 << (c - 1))) res |= 1 << (rankMap.get(c)! - 1)
+		for (let c = 0; c < 4; c++) {
+			if (mask & (1 << c)) res |= 1 << (rankMap.get(c)! - 1)
 		}
 		return res
 	}
@@ -142,11 +142,11 @@ export const getColorProfiles = (
 	})
 
 	// 6. Build profiles using the canonical leaf order.
-	const profiles = [1, 2, 3, 4].map(c => {
-		const centerBit = (centerMask & (1 << (c - 1))) !== 0 ? 1 : 0
+	const profiles = [0, 1, 2, 3].map(c => {
+		const centerBit = (centerMask & (1 << c)) !== 0 ? 1 : 0
 		let leafBitsMask = 0
 		for (let i = 0; i < sortedLeaves.length; i++) {
-			if (sortedLeaves[i] & (1 << (c - 1))) leafBitsMask |= 1 << i
+			if (sortedLeaves[i] & (1 << c)) leafBitsMask |= 1 << i
 		}
 		return { color: c, centerBit, leafBitsMask }
 	})
@@ -164,7 +164,7 @@ export const getColorProfiles = (
  * Convert a star graph into its canonical compact string representation.
  *
  * Format: `S{d}__{centerHalfedges}_{centerColors}__{leafHalfedges}_{leafColors}__...` where d is
- * the leaf count, and colors are encoded as digits 1-4.
+ * the leaf count, and colors are encoded as digits 0-3.
  *
  * @param graph - Star-shaped graph with a single root and any number of leaves.
  * @returns Canonical, stable string encoding of the star.
@@ -234,7 +234,7 @@ export const parseStarGraph = (s: string): Graph => {
 
 	for (let i = 0; i < d; i++) {
 		const [h, c] = leafParts[i].split("_")
-		const id = `${character(i + 1)}`
+		const id = `${character(i)}`
 		nodes.push({
 			id,
 			halfedges: Number(h),
@@ -263,8 +263,8 @@ export const canonicalizeColorMasks = (
 
 	const remapMaskWithMap = (mask: number, colorMap: Map<number, number>): number => {
 		let out = 0
-		for (let c = 1; c <= 4; c++) {
-			if (mask & (1 << (c - 1))) out |= 1 << (colorMap.get(c)! - 1)
+		for (let c = 0; c < 4; c++) {
+			if (mask & (1 << c)) out |= 1 << (colorMap.get(c)! - 1)
 		}
 		return out
 	}
@@ -296,8 +296,8 @@ const leafMasks: number[][] = (() => {
  *
  * Enforces:
  * - Center has zero halfedges.
- * - Color 1 appears in the used color set (anchors canonical labels).
- * - Center color mask is a prefix (1<<k)-1 within size bounds.
+ * - Color 0 appears in the used color set (anchors canonical labels).
+ * - Center color mask is a prefix $(1<<k)-1$ within size bounds.
  * - Leaf color masks and center mask satisfy the given list-size bounds.
  * - Color assignments that would be relabeled by canonicalization are skipped to avoid duplicate
  *   signatures.
