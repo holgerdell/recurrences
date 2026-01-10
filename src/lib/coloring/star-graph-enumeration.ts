@@ -13,6 +13,26 @@ import { character, popcount } from "$lib/utils"
 import { Graph, type GraphNode, type GraphEdge, type Color } from "./graph"
 
 /**
+ * Returns whether node 1 has higher priority than node 2. Higher Priority means that our branching
+ * algorithm would have chosen to branch on node 1. Thus, we only need to consider situations where
+ * no leaf has higher priority than the center.
+ */
+export const hasHigherPriority = (
+	degree1: number,
+	degree2: number,
+	listSize1: number,
+	listSize2: number
+): boolean => {
+	return degree1 > degree2 || (degree1 === degree2 && listSize1 < listSize2)
+	// return listSize1 < listSize2 || (listSize1 === listSize2 && degree1 > degree2)
+}
+
+/**
+): boolean => {
+	return listSize1 < listSize2 || (listSize1 === listSize2 && degree1 > degree2)
+}
+
+/**
  * Decode a color string (e.g., "0123") back into a color set.
  *
  * @param s - String of digits "0" through "3" representing colors.
@@ -387,10 +407,11 @@ export function* enumerateStarSignatures(
  */
 export function* enumerateSituations() {
 	for (let centerListSize = 2; centerListSize <= 4; centerListSize++) {
-		for (let leafListSize = centerListSize; leafListSize <= 4; leafListSize++) {
-			for (let degree = 3; degree <= 6; degree++) {
+		for (let leafListSize = 2; leafListSize <= 4; leafListSize++) {
+			for (let degree = 3; degree <= 5; degree++) {
 				for (let halfedges = 2; halfedges <= 6; halfedges++) {
-					if (centerListSize === leafListSize && degree < halfedges + 1) continue
+					// if a leaf node would have higher priority than the center, then we would have branched on it instead, so we can skip this case
+					if (hasHigherPriority(halfedges + 1, degree, leafListSize, centerListSize)) continue
 					yield* enumerateStarSignatures(degree, halfedges, centerListSize, leafListSize)
 				}
 			}
