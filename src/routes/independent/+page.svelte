@@ -160,6 +160,7 @@
 	let userWeights = $state(degreeFeatureSpace.createFeatureVector(1))
 	let isWeightSearchRunning = $state(false)
 	let weightSearchProgress = $state({ mode: "", phase: "", percent: 0 })
+	let didAutoStartOptimization = $state(false)
 
 	let hoveredGraph = $state<Graph | null>(null)
 	let tooltipPosition = $state({ x: 0, y: 0 })
@@ -322,6 +323,17 @@
 		weightSearchProgress = { mode: "", phase: "", percent: 0 }
 		currentSearchBounds = null
 		userWeights = degreeFeatureSpace.createFeatureVector(1)
+	})
+
+	$effect(() => {
+		// Auto-start the first optimization once per page load.
+		if (didAutoStartOptimization) return
+		if (!browser) return
+		if (localSituationsStatus.loading) return
+		if (filteredRules.length === 0) return
+		if (isWeightSearchRunning) return
+		didAutoStartOptimization = true
+		queueMicrotask(handleStartSearch)
 	})
 </script>
 
