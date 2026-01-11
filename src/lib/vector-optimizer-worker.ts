@@ -1,13 +1,8 @@
-import {
-	features,
-	type RuleDeltas,
-	type FeatureVector,
-	evaluateMeasure
-} from "./coloring/featureSpace"
+import { type RuleDeltas, evaluateMeasure } from "./coloring/featureSpace"
 import {
 	type OptimizationCallbacks,
 	type OptimizeVectorParams,
-	optimizeVectorNelderMead
+	optimizeVectorBFGS
 } from "./vector-optimizer"
 
 /**
@@ -74,8 +69,14 @@ self.onmessage = async (event: MessageEvent<OptimizationWorkerInput>) => {
 	if (event.data?.type !== "start") return
 
 	const { ruleDeltasGroups, min, max } = event.data
-
-	const dimension = features.length
+	const dimension = min.length
+	if (dimension === 0 || max.length !== dimension) {
+		postMessage({
+			type: "error",
+			message: "Invalid optimization bounds: min/max must be non-empty and have the same length."
+		})
+		return
+	}
 
 	const callbacks: OptimizationCallbacks = {
 		onProgress: percent => {
@@ -94,13 +95,12 @@ self.onmessage = async (event: MessageEvent<OptimizationWorkerInput>) => {
 			min,
 			max,
 			evaluate: x => {
-				const w = Object.fromEntries(features.map((f, i) => [f, x[i]])) as FeatureVector
-				return evaluateMeasure(w, ruleDeltasGroups)
+				return evaluateMeasure(x, ruleDeltasGroups)
 			},
 			initialSamples: 600 * dimension,
 			topK: 5
 		}
-		await optimizeVectorNelderMead(
+		await optimizeVectorBFGS(
 			{
 				...param,
 				maxIterations: 4000,
@@ -108,6 +108,14 @@ self.onmessage = async (event: MessageEvent<OptimizationWorkerInput>) => {
 			},
 			callbacks
 		)
+		// await optimizeVectorNelderMead(
+		// 	{
+		// 		...param,
+		// 		maxIterations: 4000,
+		// 		tolerance: 1e-6
+		// 	},
+		// 	callbacks
+		// )
 		// await optimizeVectorCMAES(
 		// 	{
 		// 		...param,

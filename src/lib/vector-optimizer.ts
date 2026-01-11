@@ -67,6 +67,91 @@ function pointwiseClamp(x: number[], min: number[], max: number[]): number[] {
 	return out
 }
 
+function dot(a: readonly number[], b: readonly number[]): number {
+	let s = 0
+	for (let i = 0; i < a.length; i++) s += a[i] * b[i]
+	return s
+}
+
+function l2Norm(a: readonly number[]): number {
+	return Math.sqrt(dot(a, a))
+}
+
+function add(a: readonly number[], b: readonly number[]): number[] {
+	const out = new Array(a.length)
+	for (let i = 0; i < a.length; i++) out[i] = a[i] + b[i]
+	return out
+}
+
+function sub(a: readonly number[], b: readonly number[]): number[] {
+	const out = new Array(a.length)
+	for (let i = 0; i < a.length; i++) out[i] = a[i] - b[i]
+	return out
+}
+
+function scale(a: readonly number[], s: number): number[] {
+	const out = new Array(a.length)
+	for (let i = 0; i < a.length; i++) out[i] = a[i] * s
+	return out
+}
+
+function matVec(H: readonly number[][], v: readonly number[]): number[] {
+	const out = new Array(v.length).fill(0)
+	for (let i = 0; i < v.length; i++) {
+		let s = 0
+		for (let j = 0; j < v.length; j++) s += H[i][j] * v[j]
+		out[i] = s
+	}
+	return out
+}
+
+function identityMatrix(n: number): number[][] {
+	const H: number[][] = []
+	for (let i = 0; i < n; i++) {
+		const row = new Array(n).fill(0)
+		row[i] = 1
+		H.push(row)
+	}
+	return H
+}
+
+function outer(a: readonly number[], b: readonly number[]): number[][] {
+	const n = a.length
+	const out: number[][] = []
+	for (let i = 0; i < n; i++) {
+		const row = new Array(n)
+		for (let j = 0; j < n; j++) row[j] = a[i] * b[j]
+		out.push(row)
+	}
+	return out
+}
+
+function matMul(A: readonly number[][], B: readonly number[][]): number[][] {
+	const n = A.length
+	const out: number[][] = []
+	for (let i = 0; i < n; i++) {
+		const row = new Array(n).fill(0)
+		for (let k = 0; k < n; k++) {
+			const aik = A[i][k]
+			if (aik === 0) continue
+			for (let j = 0; j < n; j++) row[j] += aik * B[k][j]
+		}
+		out.push(row)
+	}
+	return out
+}
+
+function matAdd(A: readonly number[][], B: readonly number[][]): number[][] {
+	const n = A.length
+	const out: number[][] = []
+	for (let i = 0; i < n; i++) {
+		const row = new Array(n)
+		for (let j = 0; j < n; j++) row[j] = A[i][j] + B[i][j]
+		out.push(row)
+	}
+	return out
+}
+
 /**
  * Optimizes a vector using a hybrid approach: global sampling followed by Nelder-Mead refinement.
  *
@@ -451,4 +536,198 @@ export async function optimizeVectorCMAES(
 	}
 
 	return { x: bestX, value: bestValue }
+}
+
+/**
+ * Optimizes a vector using a hybrid approach: global sampling followed by BFGS refinement.
+ *
+ * Notes:
+ * - Uses finite-difference gradients and an Armijo backtracking line search.
+ * - Handles bounds by optimizing a penalized objective in the unconstrained space and returning the
+ *   best projected point (unpenalized objective).
+ */
+export async function optimizeVectorBFGS(
+	params: OptimizeVectorParams & {
+		/** Maximum number of BFGS iterations for each refinement. */
+		maxIterations: number
+		/** Convergence tolerance (gradient norm / step norm). */
+		tolerance: number
+	},
+	callbacks: OptimizationCallbacks = {}
+): Promise<{ x: number[]; value: number }> {
+	const { dimension, min, max, evaluate, initialSamples, topK, maxIterations, tolerance } = params
+	const { onProgress, onNewBest, onPhase } = callbacks
+
+	if (min.length !== dimension || max.length !== dimension) {
+		throw new Error("min/max bounds must match dimension")
+	}
+	if (dimension === 0) {
+		throw new Error("dimension must be > 0")
+	}
+
+	const sampler = new LowDiscrepancySequence(dimension)
+
+	let bestValue = Infinity
+	let bestX: number[] | null = null
+
+	type Candidate = { x: number[]; value: number }
+	const candidates: Candidate[] = []
+
+	const penalty = (x: readonly number[]) => {
+		let p = 0
+		for (let j = 0; j < dimension; j++) {
+			if (x[j] < min[j]) p += Math.pow(min[j] - x[j], 2)
+			else if (x[j] > max[j]) p += Math.pow(x[j] - max[j], 2)
+		}
+		return p
+	}
+
+	const objectiveWithPenalty = (x: readonly number[]): number => {
+		const projected = pointwiseClamp([...x], min, max)
+		const val = evaluate(projected)
+		const base = val ?? 1e10
+		return base + penalty(x) * 1e4
+	}
+
+	const gradient = (x: readonly number[]): number[] => {
+		const g = new Array(dimension).fill(0)
+		const fx = objectiveWithPenalty(x)
+		for (let i = 0; i < dimension; i++) {
+			const h = 1e-6 * Math.max(1, Math.abs(x[i]))
+			const xp = [...x]
+			const xm = [...x]
+			xp[i] += h
+			xm[i] -= h
+			const fp = objectiveWithPenalty(xp)
+			const fm = objectiveWithPenalty(xm)
+			// Fallback to forward difference if symmetric diff is numerically unstable.
+			const denom = 2 * h
+			let gi = (fp - fm) / denom
+			if (!Number.isFinite(gi)) gi = (fp - fx) / h
+			g[i] = Number.isFinite(gi) ? gi : 0
+		}
+		return g
+	}
+
+	onPhase?.("Phase 1: Global Sampling")
+	for (let i = 0; i < initialSamples; i++) {
+		const u = sampler.next()
+		const x = u.map((v, j) => min[j] + v * (max[j] - min[j]))
+		const projected = pointwiseClamp(x, min, max)
+		const value = evaluate(projected)
+
+		if (value !== null && value < bestValue) {
+			bestValue = value
+			bestX = projected
+			onNewBest?.(projected, value)
+		}
+		if (value !== null && Number.isFinite(value)) {
+			candidates.push({ x: projected, value })
+		}
+		if (i % 50 === 0) onProgress?.(0.7 * (i / initialSamples))
+	}
+
+	candidates.sort((a, b) => a.value - b.value)
+	const seeds = candidates.slice(0, topK)
+
+	const restartsPerSeed = 2
+	for (let i = 0; i < seeds.length; i++) {
+		for (let restart = 0; restart < restartsPerSeed; restart++) {
+			onPhase?.(
+				`Phase 2: BFGS Refinement (Seed ${i + 1}/${seeds.length}, Restart ${restart + 1}/${restartsPerSeed})`
+			)
+
+			let x = [...seeds[i].x]
+			// Small random perturbation to avoid identical starts.
+			if (restart > 0) {
+				x = x.map((v, j) => {
+					const range = max[j] - min[j]
+					return clamp(v + (Math.random() - 0.5) * range * 0.05, min[j], max[j])
+				})
+			}
+
+			let H = identityMatrix(dimension)
+			let g = gradient(x)
+			let fx = objectiveWithPenalty(x)
+
+			for (let iter = 0; iter < maxIterations; iter++) {
+				const gNorm = l2Norm(g)
+				if (!Number.isFinite(gNorm) || gNorm < tolerance) break
+
+				// Descent direction p = -H g
+				let p = scale(matVec(H, g), -1)
+				if (dot(p, g) >= 0) {
+					// Reset if H got bad.
+					H = identityMatrix(dimension)
+					p = scale(g, -1)
+				}
+
+				// Armijo backtracking line search
+				let alpha = 1
+				const c1 = 1e-4
+				const gtp = dot(g, p)
+				let xNext = x
+				let fNext = fx
+				for (let ls = 0; ls < 20; ls++) {
+					xNext = add(x, scale(p, alpha))
+					fNext = objectiveWithPenalty(xNext)
+					if (Number.isFinite(fNext) && fNext <= fx + c1 * alpha * gtp) break
+					alpha *= 0.5
+				}
+
+				const step = sub(xNext, x)
+				const stepNorm = l2Norm(step)
+				x = xNext
+				fx = fNext
+				const gNext = gradient(x)
+
+				// Track best using the true objective (unpenalized, projected)
+				const projected = pointwiseClamp([...x], min, max)
+				const actual = evaluate(projected)
+				if (actual !== null && actual < bestValue) {
+					bestValue = actual
+					bestX = projected
+					onNewBest?.(projected, actual)
+				}
+
+				if (!Number.isFinite(stepNorm) || stepNorm < tolerance) break
+
+				// BFGS update (inverse Hessian)
+				const y = sub(gNext, g)
+				const s = step
+				const sty = dot(s, y)
+				if (Number.isFinite(sty) && sty > 1e-12) {
+					const rho = 1 / sty
+					const I = identityMatrix(dimension)
+					const syT = outer(s, y)
+					const ysT = outer(y, s)
+					const ssT = outer(s, s)
+					const left = matAdd(I, scaleMatrix(syT, -rho))
+					const right = matAdd(I, scaleMatrix(ysT, -rho))
+					H = matAdd(matMul(matMul(left, H), right), scaleMatrix(ssT, rho))
+				} else {
+					H = identityMatrix(dimension)
+				}
+				g = gNext
+			}
+		}
+
+		onProgress?.(0.7 + 0.3 * ((i + 1) / seeds.length))
+	}
+
+	if (!bestX) {
+		throw new Error("Optimization failed to find a valid solution")
+	}
+	return { x: bestX, value: bestValue }
+}
+
+function scaleMatrix(A: readonly number[][], s: number): number[][] {
+	const n = A.length
+	const out: number[][] = []
+	for (let i = 0; i < n; i++) {
+		const row = new Array(n)
+		for (let j = 0; j < n; j++) row[j] = A[i][j] * s
+		out.push(row)
+	}
+	return out
 }

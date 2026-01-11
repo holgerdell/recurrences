@@ -61,13 +61,18 @@ export class Graph {
 	/** Mapping from node ID to the node object. */
 	nodeById: Readonly<Record<NodeId, GraphNode>>
 
+	/** Optional signature string assigned by the graph enumeration method. */
+	readonly signature?: string
+
 	/**
 	 * Creates a new Graph instance.
 	 *
 	 * @param nodes - The nodes of the graph.
 	 * @param edges - The edges of the graph.
+	 * @param signature - Optional signature string assigned by the graph enumeration method.
 	 */
-	constructor(nodes: readonly GraphNode[], edges: readonly GraphEdge[]) {
+	constructor(nodes: readonly GraphNode[], edges: readonly GraphEdge[], signature?: string) {
+		this.signature = signature
 		this.nodes = nodes
 			.map(n => ({ ...n }))
 			.toSorted((a, b) => {
@@ -112,6 +117,34 @@ export class Graph {
 	 */
 	degree(id: NodeId) {
 		return this.neighbors[id].size + (this.nodeById[id].halfedges ?? 0)
+	}
+
+	/**
+	 * Computes the chain-degree of a node, defined as the number of degree-3 vertices reachable via
+	 * induced paths. If the node has degree at most 2, then the chain-degree is defined as the degree.
+	 */
+	chainDegree(id: NodeId): number {
+		const deg = this.degree(id)
+		if (deg <= 2) return deg
+
+		let count = this.nodeById[id].halfedges ?? 0
+		const visited = new Set<NodeId>([id])
+		const stack: NodeId[] = [...this.neighbors[id]]
+
+		while (stack.length > 0) {
+			const current = stack.pop()!
+			if (visited.has(current)) continue
+			visited.add(current)
+			if (this.degree(current) >= 3) {
+				count++
+			} else {
+				for (const neighbor of this.neighbors[current]) {
+					stack.push(neighbor)
+				}
+			}
+		}
+
+		return count
 	}
 
 	/**
