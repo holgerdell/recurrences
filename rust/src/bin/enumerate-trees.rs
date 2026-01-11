@@ -1,3 +1,7 @@
+//
+// This is currently unused!!
+//
+
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -221,40 +225,6 @@ fn node_to_json(node: &Node, out: &mut String) {
     out.push_str("]}");
 }
 
-fn colors_to_digits(colors: u8) -> String {
-    let mut s = String::new();
-    for c in 0..=3u8 {
-        if (colors & (1u8 << c)) != 0 {
-            s.push(char::from(b'0' + c));
-        }
-    }
-    s
-}
-
-fn star_to_string(root: &Node, degree: usize) -> Option<String> {
-    if root.children.len() != degree {
-        return None;
-    }
-    if root.children.iter().any(|c| !c.children.is_empty()) {
-        return None;
-    }
-
-    let mut s = format!("S{degree}");
-    s.push_str("__");
-    s.push_str(&root.halfedges.to_string());
-    s.push('_');
-    s.push_str(&colors_to_digits(root.colors));
-
-    for child in root.children.iter() {
-        s.push_str("__");
-        s.push_str(&child.halfedges.to_string());
-        s.push('_');
-        s.push_str(&colors_to_digits(child.colors));
-    }
-
-    Some(s)
-}
-
 fn main() {
     let mut args = std::env::args().skip(1);
     let depth: usize = match args.next().as_deref() {
@@ -286,28 +256,6 @@ fn main() {
     };
 
     let trees = generate_colored_uniform_trees(depth, degree);
-
-    // For stars (depth = 1), emit compact encoded strings instead of full JSON.
-    if depth == 1 {
-        let mut out = String::new();
-        out.push('[');
-        out.push('\n');
-        for (i, t) in trees.iter().enumerate() {
-            let Some(s) = star_to_string(t, degree) else {
-                continue;
-            };
-            if i > 0 {
-                out.push(',');
-                out.push('\n');
-            }
-            out.push('"');
-            out.push_str(&s);
-            out.push('"');
-        }
-        out.push(']');
-        println!("{out}");
-        return;
-    }
 
     let mut out = String::new();
     out.push('[');
