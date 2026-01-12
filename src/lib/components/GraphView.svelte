@@ -11,12 +11,6 @@
 	}
 
 	const { graph, scale = 1 }: Props = $props()
-	const roots = $derived(
-		graph.nodes
-			.values()
-			.filter(n => n.role === "root")
-			.map(n => n.id)
-	)
 	const separator = $derived(
 		new SvelteSet(
 			graph.nodes
@@ -37,64 +31,6 @@
 	const V_GAP = 24
 
 	// ============================================================
-	// BFS distances
-	// ============================================================
-	const distances = $derived.by(() => {
-		const seeds: string[] = []
-		const seen = new SvelteSet<string>()
-
-		for (const id of roots) {
-			if (seen.has(id)) continue
-			if (!graph.nodes.values().some(n => n.id === id)) continue
-			seeds.push(id)
-			seen.add(id)
-		}
-
-		const dist = new SvelteMap<string, number>()
-		const queue: string[] = []
-
-		for (const seed of seeds) {
-			dist.set(seed, 0)
-			queue.push(seed)
-		}
-
-		while (queue.length > 0) {
-			const v = queue.shift()!
-			const d = dist.get(v)!
-
-			for (const u of graph.neighbors[v]) {
-				if (!dist.has(u)) {
-					dist.set(u, d + 1)
-					queue.push(u)
-				}
-			}
-		}
-
-		// Unreached nodes go to the last layer
-		const max = Math.max(...dist.values())
-		for (const n of graph.nodes) {
-			if (!dist.has(n.id)) {
-				dist.set(n.id, max + 1)
-			}
-		}
-
-		return dist
-	})
-
-	// ============================================================
-	// Layer grouping
-	// ============================================================
-	const layers = $derived.by(() => {
-		const map = new SvelteMap<number, GraphNode[]>()
-		for (const n of graph.nodes) {
-			const d = distances.get(n.id)!
-			if (!map.has(d)) map.set(d, [])
-			map.get(d)!.push(n)
-		}
-		return map
-	})
-
-	// ============================================================
 	// Positioned nodes
 	// ============================================================
 	interface PositionedNode extends GraphNode {
@@ -104,7 +40,13 @@
 
 	const positionedNodes = $derived.by(() => {
 		const positioned: PositionedNode[] = []
-		const layerEntries = Array.from(layers.entries()).sort((a, b) => a[0] - b[0])
+		const layerMap = new SvelteMap<number, GraphNode[]>()
+		for (const n of graph.nodes) {
+			const layer = n.layer ?? 0
+			if (!layerMap.has(layer)) layerMap.set(layer, [])
+			layerMap.get(layer)!.push(n)
+		}
+		const layerEntries = Array.from(layerMap.entries()).sort((a, b) => a[0] - b[0])
 		const layerSizes = layerEntries.map(([, nodesInLayer]) => nodesInLayer.length)
 		const maxLayerSize = layerSizes.length ? Math.max(...layerSizes) : 0
 		const graphHeight = maxLayerSize ? maxLayerSize * NODE_H + (maxLayerSize - 1) * V_GAP : NODE_H

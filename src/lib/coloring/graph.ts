@@ -14,6 +14,8 @@ export interface GraphNode {
 	removedColors?: readonly Color[]
 	role?: "root" | "separator"
 	halfedges?: number
+	/** Optional BFS layer (0 for roots), used for visualization layout. */
+	layer?: number
 }
 
 /**
@@ -96,6 +98,44 @@ export class Graph {
 		}
 		this.nodeById = nodeById
 		this.neighbors = neighbors
+
+		// Compute BFS layers from root nodes for layout (do not overwrite pre-set layers).
+		const rootIds = this.nodes.filter(n => n.role === "root").map(n => n.id)
+		if (rootIds.length > 0) {
+			const dist = new Map<NodeId, number>()
+			const queue: NodeId[] = []
+
+			for (const id of rootIds) {
+				if (dist.has(id)) continue
+				dist.set(id, 0)
+				queue.push(id)
+			}
+
+			while (queue.length > 0) {
+				const v = queue.shift()!
+				const d = dist.get(v)!
+				for (const u of neighbors[v]) {
+					if (!dist.has(u)) {
+						dist.set(u, d + 1)
+						queue.push(u)
+					}
+				}
+			}
+
+			let max = 0
+			for (const d of dist.values()) max = Math.max(max, d)
+
+			for (const n of this.nodes) {
+				if (n.layer !== undefined) continue
+				const d = dist.get(n.id)
+				n.layer = d !== undefined ? d : max + 1
+			}
+		} else {
+			// No roots: default all unset layers to 0 for stable layout.
+			for (const n of this.nodes) {
+				if (n.layer === undefined) n.layer = 0
+			}
+		}
 	}
 
 	/**

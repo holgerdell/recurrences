@@ -174,8 +174,7 @@
 	let didAutoStartOptimization = $state(false)
 
 	let hoveredGraph = $state<Graph | null>(null)
-	let tooltipPosition = $state({ x: 0, y: 0 })
-	let showResultingGraphTooltip = $state(true)
+	let hoveredSituationId = $state<number | null>(null)
 	let showExportJson = $state(false)
 	let exportJson = $state<string>("")
 	let exportJsonInfo = $state<{ bytes: number; generatedAtMs: number } | null>(null)
@@ -391,11 +390,6 @@
 	})
 </script>
 
-<svelte:window
-	onmousemove={e => {
-		tooltipPosition = { x: e.clientX, y: e.clientY }
-	}} />
-
 <div class="mx-auto max-w-7xl space-y-6 px-4 py-6 text-sm text-gray-800 sm:px-6">
 	<header class="space-y-2">
 		<h1 class="text-2xl font-semibold tracking-tight text-gray-900">
@@ -509,26 +503,6 @@
 									</span>
 								</div>
 								<div>Base: O({formatNumber(lastBestBase)}<sup>μ</sup>)</div>
-								<!-- {#if limitingSituationId !== null}
-									<div class="flex items-center justify-between gap-3">
-										<div>Limiting situation: #{limitingSituationId}</div>
-										<label class="flex items-center gap-2 text-[11px] text-amber-800">
-											<input
-												type="checkbox"
-												class="h-3.5 w-3.5"
-												bind:checked={showResultingGraphTooltip} />
-											Show resulting-graph preview
-										</label>
-									</div>
-									{#if !localSituationsStatus.loading && ALL_LOCAL_SITUATIONS[limitingSituationId]}
-										<div
-											class="mt-2 w-fit rounded-md border border-dashed border-amber-200 bg-white p-2">
-											<GraphView
-												graph={ALL_LOCAL_SITUATIONS[limitingSituationId].canon}
-												scale={0.6} />
-										</div>
-									{/if}
-								{/if} -->
 							</div>
 						</div>
 					{/if}
@@ -719,7 +693,11 @@
 
 								<div
 									class="mt-3 w-fit rounded-md border border-dashed border-gray-200 bg-white p-2">
-									<GraphView graph={ALL_LOCAL_SITUATIONS[s].canon} scale={0.6} />
+									<GraphView
+										graph={hoveredSituationId === s && hoveredGraph
+											? hoveredGraph
+											: ALL_LOCAL_SITUATIONS[s].canon}
+										scale={0.6} />
 								</div>
 
 								{#if rulesForSituation.length === 0}
@@ -755,8 +733,14 @@
 																<!-- svelte-ignore a11y_no_static_element_interactions -->
 																<div
 																	class="flex flex-wrap items-baseline gap-2 rounded px-1 py-0.5 hover:bg-white"
-																	onmouseenter={() => (hoveredGraph = details.after)}
-																	onmouseleave={() => (hoveredGraph = null)}>
+																	onmouseenter={() => {
+																		hoveredGraph = details.after
+																		hoveredSituationId = rule.situationId
+																	}}
+																	onmouseleave={() => {
+																		hoveredGraph = null
+																		hoveredSituationId = null
+																	}}>
 																	<div class="font-mono text-[11px] text-gray-900">
 																		{describeAssignments(branch.assignments)}
 																	</div>
@@ -817,12 +801,3 @@
 		</main>
 	</div>
 </div>
-
-{#if hoveredGraph && showResultingGraphTooltip}
-	<div
-		class="fixed z-50 rounded-lg border border-gray-200 bg-white p-2 shadow-xl"
-		style="top: {tooltipPosition.y + 16}px; left: {tooltipPosition.x + 16}px;">
-		<div class="mb-1 text-xs font-semibold text-gray-500">Resulting Graph</div>
-		<GraphView graph={hoveredGraph} scale={0.7} />
-	</div>
-{/if}
