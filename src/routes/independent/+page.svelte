@@ -78,7 +78,8 @@
 		let counter = 0
 		for (const G of enumerateIndependentSetLocalSituations({
 			minDegree: 3,
-			maxDegree: situationMaxDegree
+			maxDegree: situationMaxDegree,
+			depth
 		})) {
 			if (version !== computeSituationsVersion) return
 			const situation: LocalSituation = {
@@ -104,13 +105,23 @@
 
 	const problem = "independent set" as const
 
+	let depthInput = $state(2)
 	let maxDegreeInput = $state(5)
+	const depth = $derived.by(() => {
+		const n = Number(depthInput)
+		if (!Number.isFinite(n)) return 2
+		return Math.max(1, Math.floor(n))
+	})
 	const maxDegree = $derived.by(() => {
 		const n = Number(maxDegreeInput)
 		if (!Number.isFinite(n)) return 5
 		return Math.max(3, Math.floor(n))
 	})
 	const degreeFeatureSpace = $derived.by(() => createDegreeFeatureSpace(maxDegree))
+	$effect(() => {
+		// Keep the input displaying the normalized value.
+		if (Number(depthInput) !== depth) depthInput = depth
+	})
 	$effect(() => {
 		// Keep the input displaying the normalized value.
 		if (Number(maxDegreeInput) !== maxDegree) maxDegreeInput = maxDegree
@@ -180,6 +191,48 @@
 	const scalarRecurrences = $derived.by(() => {
 		if (localSituationsStatus.loading) return []
 		return map2D(analyzedRules, generatedGetRuleSolution)
+	})
+
+	type SituationBest =
+		| { status: "ok"; base: number }
+		| { status: "divergent" }
+		| { status: "error" }
+		| { status: "none" }
+
+	const bestSituation = $derived.by(() => {
+		if (localSituationsStatus.loading) return [] as SituationBest[]
+		return analyzedRules.map((rulesForSituation, situationId): SituationBest => {
+			if (!rulesForSituation?.length) return { status: "none" }
+
+			let bestBase = Infinity
+			let sawDivergent = false
+			let sawError = false
+
+			for (const rule of rulesForSituation) {
+				const solved = scalarRecurrences[situationId]?.[rule.ruleId]
+				if (!solved?.weighted) continue
+				if (!solved.weighted.decreasing) {
+					sawDivergent = true
+					continue
+				}
+
+				const solution = solved.solution
+				if (solution.ok && !solution.divergent) {
+					const roots = Object.values(solution.root)
+					if (roots.length === 0) continue
+					bestBase = Math.min(bestBase, ...roots)
+				} else if (solution.ok) {
+					sawDivergent = true
+				} else {
+					sawError = true
+				}
+			}
+
+			if (bestBase !== Infinity) return { status: "ok", base: bestBase }
+			if (sawError) return { status: "error" }
+			if (sawDivergent) return { status: "divergent" }
+			return { status: "none" }
+		})
 	})
 
 	const sortedDisplaySituations = $derived.by(() => {
@@ -309,6 +362,7 @@
 
 	$effect(() => {
 		void maxDegree
+		void depth
 		if (browser) queueMicrotask(computeSituations)
 		else computeSituations()
 	})
@@ -362,6 +416,19 @@
 					<div class="text-xs font-semibold tracking-wide text-gray-600 uppercase">Controls</div>
 				</div>
 				<div class="mt-4 space-y-4">
+					<label class="flex flex-col gap-1 text-xs font-semibold tracking-wide text-gray-600">
+						<span class="uppercase">Depth</span>
+						<input
+							type="number"
+							min="1"
+							step="1"
+							class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-sky-500 focus:outline-none"
+							bind:value={depthInput} />
+						<p class="text-[11px] font-normal text-gray-500">
+							How many neighborhood layers are included in the local situation.
+						</p>
+					</label>
+
 					<label class="flex flex-col gap-1 text-xs font-semibold tracking-wide text-gray-600">
 						<span
 							><span class="uppercase">Degree bucket threshold</span>
@@ -626,6 +693,7 @@
 					{:then x}
 						{#each x as s (ALL_LOCAL_SITUATIONS[s].signature)}
 							{@const rulesForSituation = analyzedRules[s] ?? []}
+							{@const best = bestSituation[s]}
 							<div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
 								<div class="flex items-start justify-between gap-3">
 									<div class="min-w-0">
@@ -636,8 +704,16 @@
 											{ALL_LOCAL_SITUATIONS[s].signature}
 										</div>
 									</div>
-									<div class="text-[11px] text-gray-500">
-										{rulesForSituation.length} rule{rulesForSituation.length === 1 ? "" : "s"}
+									<div class="text-gray-500">
+										{#if best?.status === "ok"}
+											O({formatNumber(best.base)}<sup>μ</sup>)
+										{:else if best?.status === "divergent"}
+											Divergent
+										{:else if best?.status === "error"}
+											Solver error
+										{:else}
+											No solution
+										{/if}
 									</div>
 								</div>
 

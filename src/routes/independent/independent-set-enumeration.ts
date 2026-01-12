@@ -101,20 +101,49 @@ export function uniformTree01FromDegrees(degrees: number[]): Graph {
 export function* enumerateIndependentSetLocalSituations(options?: {
 	minDegree?: number
 	maxDegree?: number
+	depth?: number
 }): Generator<Graph> {
-	const { minDegree = 3, maxDegree = 6 } = options ?? {}
+	const { minDegree = 3, maxDegree = 6, depth = 2 } = options ?? {}
 
-	for (let degree0 = minDegree; degree0 <= maxDegree; degree0++) {
-		for (let degree1 = minDegree; degree1 <= maxDegree; degree1++) {
-			// for (let degree2 = minDegree; degree2 <= maxDegree; degree2++) {
-			// Matches the constraint used by enumerateSituations in star-graph-enumeration.ts
-			// if (degree2 > degree0) continue
-			if (degree1 > degree0) continue
-			// Stars are exactly the depth-1 uniform trees degrees=[rootDegree, leafHalfedges].
-			// yield uniformTree01FromDegrees([degree0, 2, degree1, 2, degree2])
-			yield uniformTree01FromDegrees([degree0, degree1])
-			yield uniformTree01FromDegrees([degree0, 2, degree1])
-			// }
+	const degrees: number[] = []
+
+	function* backtrack(currentDepth = 0): Generator<Graph> {
+		if (currentDepth === depth) {
+			yield uniformTree01FromDegrees(degrees)
+			return
+		}
+		for (let degree = minDegree; degree <= maxDegree; degree++) {
+			if (currentDepth > 0 && degree > degrees[0]) return
+			degrees.push(degree)
+			yield* backtrack(currentDepth + 1)
+			if (currentDepth < depth - 1) {
+				degrees.push(2)
+				yield* backtrack(currentDepth + 1)
+				degrees.pop()
+			}
+			degrees.pop()
 		}
 	}
+	yield* backtrack()
+
+	// for (let degree0 = minDegree; degree0 <= maxDegree; degree0++) {
+	// 	for (let degree1 = minDegree; degree1 <= maxDegree; degree1++) {
+	// 		if (degree1 > degree0) break
+	// 		for (let degree2 = minDegree; degree2 <= maxDegree; degree2++) {
+	// 			if (degree2 > degree0) break
+	// 			// yield uniformTree01FromDegrees([degree0, degree1, degree2])
+	// 			// yield uniformTree01FromDegrees([degree0, degree1, 2, degree2])
+	// 			// yield uniformTree01FromDegrees([degree0, 2, degree1, 2, degree2])
+	// 			// yield uniformTree01FromDegrees([degree0, 2, degree1, degree2])
+
+	// 			for (let degree3 = minDegree; degree3 <= maxDegree; degree3++) {
+	// 				if (degree3 > degree0) break
+	// 				yield uniformTree01FromDegrees([degree0, degree1, degree2, degree3])
+	// 				yield uniformTree01FromDegrees([degree0, degree1, 2, degree2, degree3])
+	// 				yield uniformTree01FromDegrees([degree0, 2, degree1, 2, degree2, degree3])
+	// 				yield uniformTree01FromDegrees([degree0, 2, degree1, degree2, degree3])
+	// 			}
+	// 		}
+	// 	}
+	// }
 }
