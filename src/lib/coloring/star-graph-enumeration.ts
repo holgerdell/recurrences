@@ -10,7 +10,7 @@
  *   ordered color renaming.
  */
 import { character, popcount } from "$lib/utils"
-import { Graph, type GraphNode, type GraphEdge, type Color } from "./graph"
+import { Graph, type GraphNode, type GraphEdge, type Color, type GraphEnumerator } from "./graph"
 
 /**
  * Returns whether node 1 has higher priority than node 2. Higher Priority means that our branching
@@ -62,7 +62,7 @@ const maskToColorStr = (mask: number): string => {
  * - `mask`: 4-bit color mask for the leaf list.
  * - `halfedges`: dangling edge count for the leaf.
  */
-type LeafSig = { size: number; mask: number; halfedges: number }
+type LeafSig = { size: number; mask: number; degree: number }
 
 /**
  * Leaf comparison: (1) increasing |L|, (2) increasing bitmask value, (3) increasing halfedges.
@@ -74,7 +74,7 @@ type LeafSig = { size: number; mask: number; halfedges: number }
 const compareLeafOrder = (a: LeafSig, b: LeafSig): number => {
 	if (a.size !== b.size) return a.size - b.size
 	if (a.mask !== b.mask) return a.mask - b.mask
-	return a.halfedges - b.halfedges
+	return a.degree - b.degree
 }
 
 /**
@@ -197,7 +197,7 @@ export const stringifyStarGraph = (graph: Graph): string => {
 	const leafSigs: LeafSig[] = leaves.map(l => ({
 		size: l.colors.length,
 		mask: colorsToMask(l.colors),
-		halfedges: l.halfedges ?? 0
+		degree: (l.halfedges ?? 0) + 1
 	}))
 
 	leafSigs.sort(compareLeafOrder)
@@ -212,13 +212,13 @@ export const stringifyStarGraph = (graph: Graph): string => {
 	const finalLeafSigs = canonLeaves.map((mask, i) => ({
 		size: leafSigs[i].size,
 		mask,
-		halfedges: leafSigs[i].halfedges
+		degree: leafSigs[i].degree
 	}))
 	finalLeafSigs.sort(compareLeafOrder)
 
 	const centerPart = `${center.halfedges ?? 0}_` + maskToColorStr(canonCenter)
 
-	const leafPart = finalLeafSigs.map(l => `${l.halfedges}_` + maskToColorStr(l.mask)).join("__")
+	const leafPart = finalLeafSigs.map(l => `${l.degree}_` + maskToColorStr(l.mask)).join("__")
 
 	return `S${leaves.length}__${centerPart}__${leafPart}`
 }
@@ -257,13 +257,13 @@ export const parseStarGraph = (s: string): Graph => {
 		const id = `${character(i)}`
 		nodes.push({
 			id,
-			halfedges: Number(h),
+			halfedges: Number(h) - 1,
 			colors: decodeColorStr(c),
 			role: "separator"
 		})
 		edges.push({ from: "v", to: id })
 	}
-	return new Graph(nodes, edges)
+	return new Graph(nodes, edges, s)
 }
 
 /**
@@ -322,15 +322,15 @@ const leafMasks: number[][] = (() => {
  * - Color assignments that would be relabeled by canonicalization are skipped to avoid duplicate
  *   signatures.
  *
- * @param degree - Number of leaves to enumerate.
- * @param halfedges - Dangling edges per leaf.
+ * @param centerDegree - Number of leaves to enumerate.
+ * @param leafDegree - Dangling edges per leaf.
  * @param centerListSize - Size of the center vertex color list.
  * @param leafListSize - Size of the leaf vertex color lists.
  * @returns Generator emitting canonical signatures of the form `S{d}__0_{colorStr}__...`.
  */
 export function* enumerateStarSignatures(
-	degree: number,
-	halfedges: number,
+	centerDegree: number,
+	leafDegree: number,
 	centerListSize: number,
 	leafListSize: number
 ): Generator<string> {
@@ -340,7 +340,7 @@ export function* enumerateStarSignatures(
 	// Enumerate multisets of leaves (non-decreasing sequence)
 	const leaves: number[] = []
 	function* backtrackLeaves(start: number): Generator<void> {
-		if (leaves.length === degree) {
+		if (leaves.length === centerDegree) {
 			yield
 			return
 		}
@@ -381,11 +381,11 @@ export function* enumerateStarSignatures(
 		let leafPart = ""
 		for (let i = 0; i < canonLeaves.length; i++) {
 			if (i > 0) leafPart += "__"
-			leafPart += `${halfedges}_` + maskToColorStr(canonLeaves[i])
+			leafPart += `${leafDegree}_` + maskToColorStr(canonLeaves[i])
 		}
 
 		const centerStr = maskToColorStr(canonCenter)
-		const signature = `S${degree}__0_${centerStr}__${leafPart}`
+		const signature = `S${centerDegree}__0_${centerStr}__${leafPart}`
 
 		if (seen.has(signature)) continue
 		seen.add(signature)
@@ -405,14 +405,21 @@ export function* enumerateStarSignatures(
  *
  * @yields Canonical star graph signatures.
  */
-export function* enumerateSituations() {
+export const enumerateSituations: GraphEnumerator = function* () {
 	for (let centerListSize = 2; centerListSize <= 4; centerListSize++) {
 		for (let leafListSize = 2; leafListSize <= 4; leafListSize++) {
 			for (let degree = 3; degree <= 6; degree++) {
 				for (let halfedges = 2; halfedges <= 6; halfedges++) {
 					// if a leaf node would have higher priority than the center, then we would have branched on it instead, so we can skip this case
 					if (hasHigherPriority(halfedges + 1, degree, leafListSize, centerListSize)) continue
-					yield* enumerateStarSignatures(degree, halfedges, centerListSize, leafListSize)
+					for (const sig of enumerateStarSignatures(
+						degree,
+						halfedges,
+						centerListSize,
+						leafListSize
+					)) {
+						yield parseStarGraph(sig)
+					}
 				}
 			}
 		}

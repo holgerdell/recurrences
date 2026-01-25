@@ -1,4 +1,4 @@
-import { type RuleDeltas, evaluateMeasure } from "./coloring/featureSpace"
+import { type RuleDeltas, evaluateMeasure } from "./coloring/feature-space"
 import {
 	type OptimizationCallbacks,
 	type OptimizeVectorParams,

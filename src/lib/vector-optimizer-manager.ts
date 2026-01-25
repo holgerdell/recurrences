@@ -1,6 +1,6 @@
 import { browser } from "$app/environment"
-import { type RuleDeltas, features } from "$lib/coloring/featureSpace"
-import type { TFeatureVector } from "./coloring/rule-engine"
+import { type RuleDeltas, features } from "$lib/coloring/feature-space"
+import type { FeatureVector } from "./coloring/feature-space"
 import type { OptimizationWorkerOutput, OptimizationWorkerInput } from "./vector-optimizer-worker"
 
 /**
@@ -41,10 +41,10 @@ export class OptimizationManager {
 		 *   `featureKeys` array.
 		 */
 		ruleDeltasGroups: RuleDeltas[][]
-		bounds: { min: Partial<TFeatureVector>; max: Partial<TFeatureVector> }
+		bounds: { min: Partial<FeatureVector>; max: Partial<FeatureVector> }
 		onProgress: (percent: number) => void
 		onPhase: (phase: string) => void
-		onBest: (weights: TFeatureVector, base: number) => void
+		onBest: (weights: FeatureVector, base: number) => void
 		onDone: () => void
 		onError: (msg: string) => void
 	}) {

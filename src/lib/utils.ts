@@ -40,7 +40,7 @@ export const formatPercent = (num: number) => `${num.toFixed(1)}%`
  * @param digits - Number of decimal digits to keep.
  * @returns Human-readable numeric string.
  */
-export function formatNumber(x: number, digits: number = 4): string {
+export function formatNumber(x: number, digits: number = 5): string {
 	if (!Number.isFinite(x)) return String(x)
 	const factor = 10 ** digits
 	const roundedUp = Math.ceil(x * factor) / factor

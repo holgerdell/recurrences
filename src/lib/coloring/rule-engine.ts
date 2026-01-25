@@ -1,8 +1,6 @@
 import { Graph, type Color, type GraphEdge, type GraphNode, type NodeId } from "./graph"
-import { innerProduct, subtractFeatureVectors } from "./featureSpace"
+import { innerProduct, subtracFeatureVectors, type FeatureVector } from "./feature-space"
 import { hasProperColoring } from "./proper-coloring"
-
-export type TFeatureVector = Record<string, number>
 
 /**
  * Represents a single branch within a rule, mapping vertex ids to new color lists.
@@ -27,12 +25,12 @@ export interface BranchingRule {
  * Summarizes analyzer output for an entire rule and its recurrence impact.
  */
 export interface BranchingRuleWithAnalysis extends BranchingRule {
-	featuresBefore: TFeatureVector
+	featuresBefore: FeatureVector
 	beforeHasColoring: boolean
 	branchDetails: ReadonlyArray<{
 		after: Graph
-		featuresAfter: TFeatureVector
-		featuresDelta: TFeatureVector
+		featuresAfter: FeatureVector
+		featuresDelta: FeatureVector
 		hasColoring: boolean
 	}>
 	recurrenceEquation: string
@@ -422,14 +420,14 @@ function applyListColoringBranch(rule: BranchingRule, branch: Branch): Graph {
  * @param deltas - Difference of feature vectors, showing how each feature drops in a branch.
  * @returns Display string and compact equation form.
  */
-export function buildRecurrenceStrings(deltas: TFeatureVector[], onlyRHS = false) {
+export function buildRecurrenceStrings(deltas: FeatureVector[], onlyRHS = false) {
 	const nonZero = new Set<string>()
 	for (const delta of deltas) {
 		for (const f of Object.keys(delta)) {
 			if (delta[f] !== 0) nonZero.add(f)
 		}
 	}
-	function makeFunction(delta: TFeatureVector) {
+	function makeFunction(delta: FeatureVector) {
 		return (
 			"T(" +
 			Array.from(nonZero)
@@ -440,7 +438,7 @@ export function buildRecurrenceStrings(deltas: TFeatureVector[], onlyRHS = false
 	}
 	const RHS = deltas.map(makeFunction).join("+")
 	if (onlyRHS) return RHS
-	const LHS = makeFunction({} as TFeatureVector)
+	const LHS = makeFunction({} as FeatureVector)
 	return `${LHS}=${RHS}`
 }
 
@@ -457,8 +455,8 @@ export type WeightedScalarRecurrence = { equation: string; drops: number[]; decr
  * @returns Display/equation strings plus the list of drops.
  */
 export function buildScalarRecurrence(
-	deltas: TFeatureVector[],
-	weights: TFeatureVector
+	deltas: FeatureVector[],
+	weights: FeatureVector
 ): WeightedScalarRecurrence {
 	const drops = deltas.map(delta => innerProduct(weights, delta))
 	const counts = new Map<number, number>()
@@ -493,7 +491,7 @@ export function buildScalarRecurrence(
  */
 export function analyzeRule(
 	rule: BranchingRule,
-	computeFeatureVector: (G: Graph) => TFeatureVector,
+	computeFeatureVector: (G: Graph) => FeatureVector,
 	problem: "independent set" | "list coloring"
 ): BranchingRuleWithAnalysis {
 	const featuresBefore = computeFeatureVector(rule.before)
@@ -502,7 +500,7 @@ export function analyzeRule(
 		const after = applyBranchingRule(rule, branch, problem)
 		const featuresAfter = computeFeatureVector(after)
 		const hasColoring = hasProperColoring(after)
-		const featuresDelta = subtractFeatureVectors(featuresBefore, featuresAfter)
+		const featuresDelta = subtracFeatureVectors(featuresBefore, featuresAfter)
 		return { after, featuresAfter, featuresDelta, hasColoring }
 	})
 	const deltas = branchDetails.map(b => b.featuresDelta)

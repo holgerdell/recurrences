@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from "svelte"
 	import { browser } from "$app/environment"
-	import { formatMeasure } from "$lib/coloring/featureSpace"
+	import { formatMeasure } from "$lib/coloring/feature-space"
 	import type { Graph } from "$lib/coloring/graph"
 	import {
 		analyzeRule,
@@ -10,9 +10,8 @@
 		buildScalarRecurrence,
 		describeAssignments,
 		type BranchingRule,
-		type BranchingRuleWithAnalysis,
-		type TFeatureVector
-	} from "$lib/coloring/rule-engine"
+		type BranchingRuleWithAnalysis	} from "$lib/coloring/rule-engine"
+	import { type FeatureVector } from "$lib/coloring/feature-space"
 	import BasicSubscripts from "$lib/components/BasicSubscripts.svelte"
 	import GraphView from "$lib/components/GraphView.svelte"
 	import { formatAsymptotics } from "$lib/polynomial-system-solver"
@@ -127,11 +126,11 @@
 		if (Number(maxDegreeInput) !== maxDegree) maxDegreeInput = maxDegree
 	})
 
-	const fixedPartialMeasure: TFeatureVector = {}
+	const fixedPartialMeasure: FeatureVector = {}
 
-	function buildDefaultBounds(fixed: TFeatureVector) {
-		const min: TFeatureVector = {}
-		const max: TFeatureVector = {}
+	function buildDefaultBounds(fixed: FeatureVector) {
+		const min: FeatureVector = {}
+		const max: FeatureVector = {}
 		for (const f of degreeFeatureSpace.features) {
 			const v = fixed[f]
 			if (v !== undefined) {
@@ -180,11 +179,11 @@
 	let exportJsonInfo = $state<{ bytes: number; generatedAtMs: number } | null>(null)
 	let exportJsonError = $state<string>("")
 
-	let lastBestWeights = $state<TFeatureVector | null>(null)
+	let lastBestWeights = $state<FeatureVector | null>(null)
 	let lastBestBase = $state<number | null>(null)
 	let currentSearchBounds = $state<null | {
-		min: TFeatureVector
-		max: TFeatureVector
+		min: FeatureVector
+		max: FeatureVector
 	}>(null)
 
 	const scalarRecurrences = $derived.by(() => {
@@ -238,7 +237,7 @@
 		const sol = map2D(scalarRecurrences, ({ solution: x }) =>
 			x?.ok ? (x.divergent ? Infinity : Object.values(x.root)[0]) : 0
 		)
-		return displaySituations.toSorted((a, b) => Math.min(...sol[b]) - Math.min(...sol[a]))
+		return displaySituations.toSorted((a, b) => Math.min(...sol[b]) - Math.min(...sol[a])).slice(0,100)
 	})
 
 	/**
@@ -640,7 +639,7 @@
 							Schema:
 							<span class="ml-1 font-mono"
 								>[&#123;situationId, signature, rules: [&#123;ruleId, branchDeltas:
-								TFeatureVector[]&#125;]&#125;]</span>
+								FeatureVector[]&#125;]&#125;]</span>
 						</div>
 					</div>
 				{/if}

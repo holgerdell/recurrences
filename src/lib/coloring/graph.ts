@@ -202,3 +202,8 @@ export class Graph {
 		return result.difference(new Set(roots))
 	}
 }
+
+/**
+ * Type for graph enumeration strategies.
+ */
+export type GraphEnumerator = () => Generator<Graph>

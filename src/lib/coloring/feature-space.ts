@@ -1,7 +1,20 @@
 import { solveRecurrencesFromStrings } from "$lib/recurrence-solver"
 import { formatNumber } from "$lib/utils"
 import type { Graph, GraphNode } from "./graph"
-import { buildScalarRecurrence, type TFeatureVector } from "./rule-engine"
+import { buildScalarRecurrence } from "./rule-engine"
+
+/**
+ * A mapping from feature names to their numeric values. This could be the number of vertices with a
+ * certain property, etc., or the weights assigned to each feature in a measure.
+ */
+export type FeatureVector = Record<string, number>
+
+export interface FeatureSpace {
+	features: readonly string[]
+	createFeatureVector: (x: number | Partial<FeatureVector>) => FeatureVector
+	describeFeature: (f: string) => string
+	computeFeatureVector: (G: Graph) => FeatureVector
+}
 
 /**
  * Represents the feature vector deltas for each branch of a rule.
@@ -22,11 +35,11 @@ export type RuleDeltas = number[][]
  * @returns The base value of the limiting situation.
  */
 export function evaluateMeasure(w: number[], ruleDeltasGroups: number[][][][]): number {
-	const weights = Object.fromEntries(w.map((v, i) => [`x${i}`, v])) as TFeatureVector
+	const weights = Object.fromEntries(w.map((v, i) => [`x${i}`, v])) as FeatureVector
 	const dim = w.length
 	if (dim === 0) return Infinity
-	const toDeltaObject = (vec: readonly number[]): TFeatureVector =>
-		Object.fromEntries(vec.map((v, i) => [`x${i}`, v])) as TFeatureVector
+	const toDeltaObject = (vec: readonly number[]): FeatureVector =>
+		Object.fromEntries(vec.map((v, i) => [`x${i}`, v])) as FeatureVector
 
 	let valueOfWorstSituation = -Infinity
 	for (const situation of ruleDeltasGroups) {
@@ -35,7 +48,7 @@ export function evaluateMeasure(w: number[], ruleDeltasGroups: number[][][][]): 
 		for (const rule of situation) {
 			if (rule.length === 0) continue
 			if (rule.some(branchDelta => branchDelta.length !== dim)) continue
-			const deltas: TFeatureVector[] = rule.map(branchDelta => toDeltaObject(branchDelta))
+			const deltas: FeatureVector[] = rule.map(branchDelta => toDeltaObject(branchDelta))
 			const r = buildScalarRecurrence(deltas, weights)
 			if (!r.decreasing) continue
 			const solution = solveRecurrencesFromStrings(r.equation)
@@ -86,9 +99,10 @@ const buildFeatureEQ = (L: number, d: number) => ({
  */
 const L_SIZES = [4, 3, 2] as const
 const DEG_CONFIGS = [
-	{ suffix: "≥5", type: "GE", d: 5 },
-	{ suffix: "4", type: "EQ", d: 4 },
-	{ suffix: "3", type: "EQ", d: 3 }
+	{ suffix: "≥3", type: "GE", d: 3 },
+	// { suffix: "4", type: "EQ", d: 4 },
+	// { suffix: "3", type: "EQ", d: 3 },
+	{ suffix: "2", type: "EQ", d: 2 }
 ] as const
 
 /**
@@ -110,11 +124,6 @@ export const FeatureDefinition = Object.fromEntries(
  * An array of all available feature keys.
  */
 export const features = Object.keys(FeatureDefinition) as Feature[]
-
-/**
- * A mapping from feature keys to their numeric values.
- */
-export type FeatureVector = Record<string, number>
 
 /**
  * A partial mapping from feature keys to their numeric values.
@@ -148,8 +157,8 @@ export function computeFeatureVector(G: Graph): FeatureVector {
  * @param b - The second feature vector.
  * @returns A new feature vector representing a - b.
  */
-export function subtractFeatureVectors(a: TFeatureVector, b: TFeatureVector): TFeatureVector {
-	const out = {} as TFeatureVector
+export function subtracFeatureVectors(a: FeatureVector, b: FeatureVector): FeatureVector {
+	const out = {} as FeatureVector
 	const keys = new Set<string>([...Object.keys(a), ...Object.keys(b)])
 	for (const k of keys) out[k] = (a[k] ?? 0) - (b[k] ?? 0)
 	return out
@@ -162,8 +171,8 @@ export function subtractFeatureVectors(a: TFeatureVector, b: TFeatureVector): TF
  * @param b - The second feature vector.
  * @returns A new feature vector representing a + b.
  */
-export function addFeatureVectors(a: TFeatureVector, b: TFeatureVector): TFeatureVector {
-	const out = {} as TFeatureVector
+export function addFeatureVectors(a: FeatureVector, b: FeatureVector): FeatureVector {
+	const out = {} as FeatureVector
 	const keys = new Set<string>([...Object.keys(a), ...Object.keys(b)])
 	for (const k of keys) out[k] = (a[k] ?? 0) + (b[k] ?? 0)
 	return out
@@ -176,8 +185,8 @@ export function addFeatureVectors(a: TFeatureVector, b: TFeatureVector): TFeatur
  * @param s - The scalar value.
  * @returns A new feature vector representing v * s.
  */
-export function scaleFeatureVector(v: TFeatureVector, s: number): TFeatureVector {
-	const out = {} as TFeatureVector
+export function scaleFeatureVector(v: FeatureVector, s: number): FeatureVector {
+	const out = {} as FeatureVector
 	const keys = new Set<string>([...Object.keys(v)])
 	for (const k of keys) out[k] = (v[k] ?? 0) * s
 	return out
@@ -227,7 +236,7 @@ export function createFeatureVector(x?: number | FeatureVector): FeatureVector {
  * @param v - The feature vector to format.
  * @returns A formatted string representation of the vector.
  */
-export function formatMeasure(v: TFeatureVector): string {
+export function formatMeasure(v: FeatureVector): string {
 	const keys = Object.keys(v)
 	return keys
 		.filter(f => v[f] !== 0)
@@ -242,7 +251,7 @@ export function formatMeasure(v: TFeatureVector): string {
  * @param b - The second feature vector.
  * @returns The scalar result of the inner product.
  */
-export function innerProduct(a: TFeatureVector, b: TFeatureVector): number {
+export function innerProduct(a: FeatureVector, b: FeatureVector): number {
 	let s = 0
 	for (const f of Object.keys(a)) s += a[f] * (b[f] ?? 0)
 	return s

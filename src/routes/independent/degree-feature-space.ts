@@ -1,12 +1,6 @@
+import type { FeatureSpace } from "$lib/coloring/feature-space"
 import type { Graph } from "$lib/coloring/graph"
-import type { TFeatureVector } from "$lib/coloring/rule-engine"
-
-export interface FeatureSpace {
-	features: readonly string[]
-	createFeatureVector: (x: number | Partial<TFeatureVector>) => TFeatureVector
-	describeFeature: (f: string) => string
-	computeFeatureVector: (G: Graph) => TFeatureVector
-}
+import type { FeatureVector } from "$lib/coloring/feature-space"
 
 const MIN_EXACT_DEGREE = 2
 
@@ -31,15 +25,15 @@ function buildDegreeFeatures(maxDegree: number): readonly string[] {
 export function createDegreeFeatureSpace(maxDegree: number): FeatureSpace {
 	const features = buildDegreeFeatures(maxDegree)
 
-	function createFeatureVector(x: number | Partial<TFeatureVector> = 0): TFeatureVector {
+	function createFeatureVector(x: number | Partial<FeatureVector> = 0): FeatureVector {
 		const out: Record<string, number> = {}
 		for (const f of features) out[f] = 0
 		if (typeof x === "number") {
 			for (const f of features) out[f] = x
-			return out as TFeatureVector
+			return out as FeatureVector
 		}
 		for (const f of features) out[f] = x[f] ?? 0
-		return out as TFeatureVector
+		return out as FeatureVector
 	}
 
 	function describeFeature(f: string): string {
@@ -51,7 +45,7 @@ export function createDegreeFeatureSpace(maxDegree: number): FeatureSpace {
 		return "(unknown feature)"
 	}
 
-	function computeFeatureVector(G: Graph): TFeatureVector {
+	function computeFeatureVector(G: Graph): FeatureVector {
 		const mu = createFeatureVector(0)
 		const geKey = `n_{≥${maxDegree}}`
 		for (const n of G.nodes) {

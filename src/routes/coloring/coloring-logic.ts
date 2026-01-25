@@ -1,5 +1,5 @@
 import type { Color, Graph } from "$lib/coloring/graph"
-import { FeatureDefinition, features, type PartialFeatureVector } from "$lib/coloring/featureSpace"
+import { FeatureDefinition, features, type PartialFeatureVector } from "$lib/coloring/feature-space"
 
 /**
  * Represents the available options for restricting color list sizes in the graph.
