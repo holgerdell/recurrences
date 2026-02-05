@@ -1,3 +1,19 @@
+"""
+optimize.py
+------------
+Optimize weights for WIS (Weighted Independent Set) branching recurrences.
+
+This script loads a JSON file describing branching situations and rules, then uses
+numerical optimization to find the best non-increasing weight vector that minimizes
+the worst-case root of a recurrence relation across all situations. The optimization
+is performed using scipy.optimize with multiple random restarts for robustness.
+
+Typical usage:
+    python optimize.py wis.json [--method Powell] [--restarts 10] [--seed 1234] ...
+
+The script prints the best solution found, verifies it, and reports any issues.
+"""
+
 import argparse
 import json
 import math
@@ -13,7 +29,15 @@ PENALTY = 1e6
 
 @dataclass(frozen=True)
 class RuleRecord:
-    """One branching rule with its branch-delta vectors."""
+    """
+    Represents a single branching rule and its associated branch-delta vectors.
+
+    Attributes:
+        situation_id: Identifier for the situation this rule belongs to.
+        signature: Human-readable signature for the situation.
+        rule_id: Unique identifier for the rule.
+        branch_delta_matrix: Matrix of branch-delta vectors (shape: (num_branches, d)).
+    """
 
     situation_id: int
     signature: str
@@ -23,7 +47,14 @@ class RuleRecord:
 
 @dataclass(frozen=True)
 class SituationRecord:
-    """One situation with (potentially multiple) rules."""
+    """
+    Represents a single situation, which may contain multiple rules.
+
+    Attributes:
+        situation_id: Unique identifier for the situation.
+        signature: Human-readable signature for the situation.
+        rules: List of rules associated with this situation.
+    """
 
     situation_id: int
     signature: str
@@ -31,12 +62,29 @@ class SituationRecord:
 
 
 def _load_json(path: str) -> Any:
+    """
+    Load and parse a JSON file from the given path.
+
+    Args:
+        path: Path to the JSON file.
+
+    Returns:
+        Parsed JSON data.
+    """
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def _extract_feature_keys(data: list[dict[str, Any]]) -> list[str]:
-    """Read feature keys from the first branchDeltas entry (no hard-coding)."""
+    """
+    Extract feature keys from the first branchDeltas entry in the JSON data.
+
+    Args:
+        data: List of situation dictionaries from JSON.
+
+    Returns:
+        List of feature key names, preserving JSON key order.
+    """
     if not data:
         raise ValueError("JSON data is empty")
     first = data[0]
@@ -56,6 +104,16 @@ def _extract_feature_keys(data: list[dict[str, Any]]) -> list[str]:
 def _build_situations(
     data: list[dict[str, Any]], feature_keys: list[str]
 ) -> list[SituationRecord]:
+    """
+    Construct SituationRecord objects from JSON data and feature keys.
+
+    Args:
+        data: List of situation dictionaries from JSON.
+        feature_keys: List of feature key names.
+
+    Returns:
+        List of constructed SituationRecord objects.
+    """
     situations: list[SituationRecord] = []
     d = len(feature_keys)
     for situation in data:
@@ -90,10 +148,17 @@ def _build_situations(
 def eval_poly_and_derivative(
     x: float, d: list[float] | np.ndarray
 ) -> tuple[float, float]:
-    """Evaluate g(x) = sum_j x^(-d[j]) - 1 and its derivative g'(x).
+    """
+    Evaluate the function g(x) = sum_j x^(-d[j]) - 1 and its derivative g'(x).
 
-    Uses log/exp for numerical stability:
-      x^(-a) = exp(-a * log(x))
+    Uses log/exp for numerical stability: x^(-a) = exp(-a * log(x)).
+
+    Args:
+        x: The value at which to evaluate the function and its derivative.
+        d: Exponents for each term in the sum.
+
+    Returns:
+        Tuple of (g(x), g'(x)).
     """
     if x <= 0:
         return float("inf"), float("inf")
@@ -114,9 +179,18 @@ num_root_calls = 0
 
 
 def root(deltas: Iterable[float], *, x0: float | None = None) -> float:
-    """Compute the unique solution to sum_j r^(-deltas[j]) - 1 = 0.
+    """
+    Compute the unique solution to sum_j r^(-deltas[j]) - 1 = 0 for r >= 1.
 
-    If no root can be bracketed on [1, +inf), returns a large finite penalty.
+    Uses analytic bracketing and root finding. If no root can be bracketed on [1, +inf),
+    returns a large finite penalty.
+
+    Args:
+        deltas: Iterable of delta values for the exponents.
+        x0: Optional initial guess for the root.
+
+    Returns:
+        The computed root, or a large penalty if no root exists.
     """
     global num_root_calls
     num_root_calls += 1
@@ -187,6 +261,12 @@ def root(deltas: Iterable[float], *, x0: float | None = None) -> float:
 
 
 def main() -> None:
+    """
+    Main entry point for the optimizer script.
+
+    Loads JSON data, sets up the optimization problem, runs multiple restarts,
+    and prints the best solution found along with verification.
+    """
     global num_root_calls
     parser = argparse.ArgumentParser(
         description="Optimize weights for WIS branching recurrences"
@@ -258,10 +338,28 @@ def main() -> None:
     #   x[i] = x[i-1] * p[i]
     # This parameterization represents exactly all non-increasing vectors in [0,1]^d.
     def _params_to_x(p: np.ndarray) -> np.ndarray:
+        """
+        Convert parameter vector p in [0,1]^d to a non-increasing weight vector x.
+
+        Args:
+            p: Parameter vector.
+
+        Returns:
+            Non-increasing weight vector x.
+        """
         p = np.clip(np.asarray(p, dtype=float), 0.0, 1.0)
         return np.cumprod(p)
 
     def _x_to_params(x: np.ndarray) -> np.ndarray:
+        """
+        Convert a non-increasing weight vector x to parameter vector p in [0,1]^d.
+
+        Args:
+            x: Weight vector.
+
+        Returns:
+            Parameter vector p.
+        """
         x = np.clip(np.asarray(x, dtype=float), 0.0, 1.0)
         p = np.empty_like(x)
         if x.size == 0:
@@ -278,6 +376,16 @@ def main() -> None:
         return np.clip(p, 0.0, 1.0)
 
     def _rule_value(x: np.ndarray, rule: RuleRecord) -> float:
+        """
+        Compute the root value for a given rule and weight vector x, using caching.
+
+        Args:
+            x: Weight vector.
+            rule: Rule to evaluate.
+
+        Returns:
+            Root value for the rule.
+        """
         deltas = rule.branch_delta_matrix @ x
         cache_key = (rule.situation_id, rule.rule_id)
         val = root(deltas, x0=root_cache.get(cache_key))
@@ -288,16 +396,33 @@ def main() -> None:
             root_cache[cache_key] = val_f
         return val_f
 
-    # f(x, i): for the i-th situation, try every rule and return the minimum solution.
     def f_i(x: np.ndarray, i: int) -> float:
+        """
+        For the i-th situation, return the minimum root value over all its rules.
+
+        Args:
+            x: Weight vector.
+            i: Situation index.
+
+        Returns:
+            Minimum root value for the situation.
+        """
         sit = situations[i]
         if not sit.rules:
             return PENALTY
         best = min(_rule_value(x, r) for r in sit.rules)
         return best
 
-    # f_x(x): maximum over all situations, for a concrete weight vector x.
     def f_x(x: np.ndarray) -> float:
+        """
+        Compute the maximum root value over all situations for a given weight vector x.
+
+        Args:
+            x: Weight vector.
+
+        Returns:
+            Maximum root value across all situations.
+        """
         x = np.clip(np.asarray(x, dtype=float), 0.0, 1.0)
         worst = 1.0
         for i in range(len(situations)):
@@ -308,8 +433,16 @@ def main() -> None:
                     return PENALTY
         return worst
 
-    # f(p): objective in parameter space.
     def f(p: np.ndarray) -> float:
+        """
+        Objective function in parameter space.
+
+        Args:
+            p: Parameter vector.
+
+        Returns:
+            Objective value for the given parameters.
+        """
         return f_x(_params_to_x(p))
 
     bounds = [(0.0, 1.0)] * dim
