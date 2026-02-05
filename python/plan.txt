@@ -1,0 +1,66 @@
+RECURRENCES PACKAGE - FUTURE EXTENSIONS
+=======================================
+
+Current State (v0.1.0)
+----------------------
+- Single-variable recurrences: T(n) = ...
+- Linear recurrences with constant coefficients
+- 147 tests passing, mypy clean
+- CLI with JSON output support
+
+
+Potential Extensions (Someday/Maybe, very low priority)
+--------------------
+
+1. Non-Constant Coefficients
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Support recurrences like T(n) = n*T(n-1) (factorial-like growth)
+
+Challenges:
+  - Characteristic equation approach doesn't directly apply
+  - May need different solving strategies per pattern
+
+
+2. Boundary Conditions
+~~~~~~~~~~~~~~~~~~~~~~
+Support specifying base cases: T(0) = 1, T(1) = 1
+
+Use cases:
+  - Verification of solutions
+  - Closed-form generation (future)
+
+
+3. Closed-Form Solutions
+~~~~~~~~~~~~~~~~~~~~~~~~
+Output explicit formulas like T(n) = (φ^n - ψ^n) / √5 for Fibonacci
+
+Requires:
+  - Symbolic computation (sympy integration)
+  - Handling repeated roots
+  - Polynomial root finding for characteristic equation
+
+
+4. Complexity Classes
+~~~~~~~~~~~~~~~~~~~~~
+Map roots to standard complexity classes:
+  - O(1), O(log n), O(n), O(n log n), O(n²), O(2^n), etc.
+
+Implementation:
+  - Pattern matching on root values
+  - Handle polynomial factors (not just exponential)
+
+
+5. Inhomogeneous Recurrences
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Support T(n) = 2*T(n-1) + n or T(n) = T(n-1) + n²
+
+Challenges:
+  - Particular solution + homogeneous solution
+  - Pattern matching on inhomogeneous term
+
+
+6. Performance Optimizations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+- Cache parsed recurrences
+- Parallel root finding for batch processing
+- JIT compilation for hot paths (numba)

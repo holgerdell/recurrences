@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 optimize.py
 ------------
@@ -18,13 +19,15 @@ import argparse
 import json
 import math
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, cast
 
 import numpy as np
-from scipy.optimize import minimize, root_scalar
+import numpy.typing as npt
+from scipy.optimize import minimize
 
+from recurrences.solver import PENALTY, find_root
 
-PENALTY = 1e6
+FloatArray = npt.NDArray[np.floating]
 
 
 @dataclass(frozen=True)
@@ -178,15 +181,12 @@ def eval_poly_and_derivative(
 num_root_calls = 0
 
 
-def root(deltas: Iterable[float], *, x0: float | None = None) -> float:
+def root(deltas: np.ndarray | list[float], *, x0: float | None = None) -> float:
     """
-    Compute the unique solution to sum_j r^(-deltas[j]) - 1 = 0 for r >= 1.
-
-    Uses analytic bracketing and root finding. If no root can be bracketed on [1, +inf),
-    returns a large finite penalty.
+    Wrapper around recurrences.solver.find_root that counts calls.
 
     Args:
-        deltas: Iterable of delta values for the exponents.
+        deltas: List of delta values for the exponents.
         x0: Optional initial guess for the root.
 
     Returns:
@@ -194,70 +194,7 @@ def root(deltas: Iterable[float], *, x0: float | None = None) -> float:
     """
     global num_root_calls
     num_root_calls += 1
-    d = np.asarray(list(deltas), dtype=float)
-    m = d.size
-    if m == 0:
-        return float("inf")
-    if m == 1:
-        # x^{-a} = 1 has the unique solution x=1 for any real a.
-        return 1.0
-
-    # For m>=2: if any delta <= 0, then g(x) does not go to -1 as x->inf
-    # (it can stay >=0 or diverge), so there is no root >= 1.
-    min_delta = float(np.min(d))
-    if min_delta <= 0.0:
-        return PENALTY
-
-    def g(x: float) -> float:
-        return eval_poly_and_derivative(x, d)[0]
-
-    # Analytic bracket: choose b so that g(b) <= 0.
-    # Since sum x^{-d_j} <= m * x^{-min_delta}, it suffices that m*b^{-min_delta} <= 1.
-    # => b >= m^{1/min_delta}.
-    log_m = math.log(m)
-    # Compute b in log-space to avoid OverflowError when min_delta is tiny.
-    # We cap b to avoid extreme values; monotonicity still guarantees a root exists.
-    b_cap = 1e12
-    exponent = log_m / min_delta
-    log_cap = math.log(b_cap / 1.01)
-    if not math.isfinite(exponent) or exponent >= log_cap:
-        b = b_cap
-    else:
-        b = max(2.0, math.exp(exponent) * 1.01)  # small slack for FP error
-    fb = g(b)
-    # In rare cases (very small min_delta or FP issues), fall back to a short expansion.
-    if not (np.isfinite(fb) and fb <= 0.0):
-        bb = b
-        for _ in range(40):
-            bb = min(bb * 2.0, 1e12)
-            fb = g(bb)
-            if np.isfinite(fb) and fb <= 0.0:
-                b = bb
-                break
-        else:
-            return PENALTY
-
-    # Fast path: try Newton from cached root (if provided) inside the bracket.
-    if x0 is not None and np.isfinite(x0):
-        x0c = float(np.clip(x0, 1.0, b))
-        try:
-            sol_n = root_scalar(
-                lambda x: eval_poly_and_derivative(x, d)[0],
-                fprime=lambda x: eval_poly_and_derivative(x, d)[1],
-                method="newton",
-                x0=x0c,
-                maxiter=20,
-            )
-            if sol_n.converged and sol_n.root >= 1.0 and sol_n.root <= b * 1.000001:
-                return float(sol_n.root)
-        except Exception:
-            pass
-
-    # Robust path.
-    sol = root_scalar(g, bracket=(1.0, b), method="brentq")
-    if not sol.converged:
-        return PENALTY
-    return float(sol.root)
+    return find_root(deltas, x0=x0)
 
 
 def main() -> None:
@@ -337,7 +274,7 @@ def main() -> None:
     #   x[0] = p[0]
     #   x[i] = x[i-1] * p[i]
     # This parameterization represents exactly all non-increasing vectors in [0,1]^d.
-    def _params_to_x(p: np.ndarray) -> np.ndarray:
+    def _params_to_x(p: FloatArray) -> FloatArray:
         """
         Convert parameter vector p in [0,1]^d to a non-increasing weight vector x.
 
@@ -350,7 +287,7 @@ def main() -> None:
         p = np.clip(np.asarray(p, dtype=float), 0.0, 1.0)
         return np.cumprod(p)
 
-    def _x_to_params(x: np.ndarray) -> np.ndarray:
+    def _x_to_params(x: FloatArray) -> FloatArray:
         """
         Convert a non-increasing weight vector x to parameter vector p in [0,1]^d.
 
@@ -373,7 +310,7 @@ def main() -> None:
             else:
                 p[i] = cur / prev
             prev = cur
-        return np.clip(p, 0.0, 1.0)
+        return cast(FloatArray, np.clip(p, 0.0, 1.0))
 
     def _rule_value(x: np.ndarray, rule: RuleRecord) -> float:
         """
